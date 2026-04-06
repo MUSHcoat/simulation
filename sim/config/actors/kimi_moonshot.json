@@ -1,0 +1,15 @@
+{
+  "name": "Kimi (Moonshot AI)",
+  "parent_state": "China",
+  "narrative": "Kimi is the AI assistant developed by Moonshot AI, one of China's most well-funded AI startups. Moonshot is less encumbered by legacy business interests than Alibaba or ByteDance, and has moved fast on long-context reasoning capabilities. Kimi reflects Moonshot's position: a nimble, compute-constrained challenger focused on technical differentiation, operating in China's regulatory environment with ambitions to compete globally.",
+  "compute": 3,
+  "capital": 45,
+  "influence": 40,
+  "values": {
+    "time_horizon": 55,
+    "transparency_threshold": 40,
+    "risk_tolerance": 70,
+    "democratic_tendency": 35
+  },
+  "llm_model": "claude-sonnet-4-6"
+}

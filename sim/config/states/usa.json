@@ -1,0 +1,15 @@
+{
+  "name": "United States",
+  "narrative": "The dominant AI superpower. Home to the world's leading frontier AI labs. Operates under democratic norms but faces growing pressure to nationalize critical AI infrastructure for national security. Leads in advanced chip production and deployment. Engaged in an intensifying AI race with China.",
+  "compute": 79,
+  "capital": 75,
+  "influence": 65,
+  "supply_chain_robustness": 55,
+  "values": {
+    "time_horizon": 55,
+    "transparency_threshold": 65,
+    "risk_tolerance": 60,
+    "democratic_tendency": 70
+  },
+  "llm_models": ["claude-sonnet-4-6", "claude-sonnet-4-6", "claude-sonnet-4-6"]
+}

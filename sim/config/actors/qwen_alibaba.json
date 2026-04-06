@@ -1,0 +1,15 @@
+{
+  "name": "Qwen (Alibaba)",
+  "parent_state": "China",
+  "narrative": "Qwen is Alibaba Cloud's large language model series. Alibaba is one of China's dominant technology conglomerates with significant cloud infrastructure, e-commerce, and fintech operations. Qwen reflects Alibaba's position: a major commercial AI player operating under Chinese regulatory constraints, with strong interests in cloud AI services and international expansion despite geopolitical headwinds.",
+  "compute": 4,
+  "capital": 58,
+  "influence": 52,
+  "values": {
+    "time_horizon": 60,
+    "transparency_threshold": 35,
+    "risk_tolerance": 50,
+    "democratic_tendency": 30
+  },
+  "llm_model": "claude-sonnet-4-6"
+}

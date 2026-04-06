@@ -1,0 +1,15 @@
+{
+  "name": "China",
+  "narrative": "Rising AI challenger to US supremacy. The state has direct influence over its AI industry and has invested heavily in domestic chip production to reduce dependence on US semiconductors. Faces compute constraints from export controls but compensates through scale of investment, data access, and state-directed coordination.",
+  "compute": 17,
+  "capital": 50,
+  "influence": 55,
+  "supply_chain_robustness": 70,
+  "values": {
+    "time_horizon": 65,
+    "transparency_threshold": 30,
+    "risk_tolerance": 55,
+    "democratic_tendency": 20
+  },
+  "llm_models": ["claude-sonnet-4-6", "claude-sonnet-4-6", "claude-sonnet-4-6"]
+}
