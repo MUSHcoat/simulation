@@ -10,6 +10,5 @@
     "transparency_threshold": 65,
     "risk_tolerance": 60,
     "democratic_tendency": 70
-  },
-  "llm_models": ["claude-sonnet-4-6", "claude-sonnet-4-6", "claude-sonnet-4-6"]
+  }
 }

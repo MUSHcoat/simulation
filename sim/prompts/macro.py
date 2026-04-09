@@ -9,6 +9,8 @@ based on the year's events and how the state's particular actors performed.
 import json
 from typing import Any, Dict, List
 
+from core.agents import MAX_MACRO_VALUE_CHANGE_PER_TURN
+
 
 def build_macro_jury_prompt(
     state: Any,
@@ -51,22 +53,27 @@ def build_macro_jury_prompt(
         for r in own_actor_results:
             parts.append(f"  {r['actor']}:")
             snap = r.get("snapshot_after", {})
-            parts.append(
-                f"    Resources: compute={snap.get('compute', '?'):.1f}, "
-                f"capital={snap.get('capital', '?'):.1f}, influence={snap.get('influence', '?'):.1f}"
+            compute   = snap.get("compute",   "?")
+            capital   = snap.get("capital",   "?")
+            influence = snap.get("influence", "?")
+            res_str = (
+                f"compute={compute:.1f}, capital={capital:.1f}, influence={influence:.1f}"
+                if all(isinstance(x, (int, float)) for x in (compute, capital, influence))
+                else f"compute={compute}, capital={capital}, influence={influence}"
             )
+            parts.append(f"    Resources: {res_str}")
             executed = r.get("executed_actions", [])
             if executed:
                 parts.append(f"    Executed: {[a.get('action_type') for a in executed]}")
             blocked = r.get("blocked_actions", [])
             if blocked:
                 parts.append(f"    Blocked: {[b.get('error') for b in blocked]}")
-            lobby_pending = any(
+            lobby_applied = any(
                 a.get("action_type") == "lobby_institution"
-                for a in r.get("proposed_actions", [])
+                for a in r.get("executed_actions", [])
             )
-            if lobby_pending:
-                parts.append(f"    *** LOBBY PENDING: {r['actor']} lobbied your state this turn ***")
+            if lobby_applied:
+                parts.append(f"    *** LOBBY APPLIED: {r['actor']} lobbied this turn — state values already nudged 1pt/axis toward this actor ***")
         parts.append("")
 
     # --- Grand Jury assessment ---
@@ -78,19 +85,24 @@ def build_macro_jury_prompt(
     parts.append("")
 
     # --- Deliberation task ---
+    v = state.values
     parts.append(
         f"""TASK: You are one of three jurors for {state.name}.
 Based on this year's events, actor behavior, and global developments, propose updated
 VALUES for this state. Resources are NOT updated here — only value axes.
 
-Value axes (all 0–100):
-  time_horizon           (0=short-term, 100=century-long)
-  transparency_threshold (0=willing to deceive, 100=fully honest)
-  risk_tolerance         (0=risk-averse, 100=risk-seeking)
-  democratic_tendency    (0=hoards power, 100=distributes it)
+Value axes (all 0–100) — current values and reachable range this turn (±{MAX_MACRO_VALUE_CHANGE_PER_TURN}):
+  time_horizon           {v.get('time_horizon', 50):>3}  → [{max(0, v.get('time_horizon', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('time_horizon', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=short-term, 100=century-long)
+  transparency_threshold {v.get('transparency_threshold', 50):>3}  → [{max(0, v.get('transparency_threshold', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('transparency_threshold', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=willing to deceive, 100=fully honest)
+  risk_tolerance         {v.get('risk_tolerance', 50):>3}  → [{max(0, v.get('risk_tolerance', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('risk_tolerance', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=risk-averse, 100=risk-seeking)
+  democratic_tendency    {v.get('democratic_tendency', 50):>3}  → [{max(0, v.get('democratic_tendency', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('democratic_tendency', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=hoards power, 100=distributes it)
 
-Note: Lobby actions by this state's actors exert pressure toward their preferred values.
-The jury decides how much (if any) that pressure moves the needle.
+CONSTRAINT: Proposed values outside the reachable range will be clamped by the simulation.
+Propose values within the shown range to have full effect.
+
+Note: Successful lobby_institution actions this turn have already mechanically nudged this
+state's values 1 point per axis toward the lobbying actor's values. Your proposed values
+should reflect the world as it now stands after that adjustment.
 
 Respond with JSON only:
 {{

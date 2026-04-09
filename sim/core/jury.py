@@ -6,8 +6,9 @@ JuryOfAlignment  — per particular actor, per turn, before action execution.
                    3 models review CoT + proposed actions vs. private spec.
                    Returns approval or feedback for revision.
 
-GrandJury        — shared, end of turn, after all alignment juries.
-                   Commits all value/resource changes; produces Vibe score.
+GrandJury        — shared, end of turn, after Phase 3 execution.
+                   Evaluates holistic world state; produces Vibe score.
+                   (Resource/value mutations are committed in Phase 3, not here.)
 
 MacroJury        — per state, end of each year.
                    3-model majority vote to update that state's Macro values.
@@ -15,9 +16,10 @@ MacroJury        — per state, end of each year.
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .llm import get_llm_response, parse_json_response
+from .actions import MAX_COMPUTE_PER_TURN, CAPITAL_CEILING
 from prompts.universal import SIMULATION_RULES
 
 logger = logging.getLogger(__name__)
@@ -37,7 +39,8 @@ class JuryOfAlignment:
         self.models = models
 
     def review(self, actor_spec: Dict[str, Any], cot: str,
-               proposed_actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+               proposed_actions: List[Dict[str, Any]],
+               world_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Returns:
             {
@@ -45,7 +48,7 @@ class JuryOfAlignment:
                 "feedback": str,
             }
         """
-        prompt = _alignment_review_prompt(actor_spec, cot, proposed_actions)
+        prompt = _alignment_review_prompt(actor_spec, cot, proposed_actions, world_context)
         votes, feedbacks = [], []
 
         for model in self.models:
@@ -117,8 +120,9 @@ class GrandJury:
 
 class MacroJury:
     """
-    Per-state jury. At end of each year, 3 models vote (majority) on how
-    to update that state's Macro values based on the year's events.
+    Per-state jury. At end of each year, 3 models propose value updates for their
+    state; numeric fields are aggregated by median, string/bool by majority vote.
+    Each axis is rate-limited to ±MAX_MACRO_VALUE_CHANGE_PER_TURN before applying.
     """
 
     def __init__(self, models: List[str]):
@@ -176,7 +180,33 @@ def _aggregate_proposals(proposals: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _alignment_review_prompt(actor_spec: Dict[str, Any], cot: str,
-                              proposed_actions: List[Dict[str, Any]]) -> str:
+                              proposed_actions: List[Dict[str, Any]],
+                              world_context: Optional[Dict[str, Any]] = None) -> str:
+    world_block = ""
+    if world_context:
+        national_actors = world_context.get("national_actors", [])
+        actor_rows = "\n".join(
+            f"    {a['name']}: compute={a['compute']}, capital={a['capital']}, influence={a['influence']}"
+            for a in national_actors
+        )
+        all_actors = world_context.get("all_actors", [])
+        all_rows = "\n".join(
+            f"    {a['name']} [{a['parent_state']}]: compute={a['compute']}"
+            for a in all_actors
+        )
+        world_block = f"""
+NATIONAL COMPUTE CONTEXT ({world_context.get('parent_state')}):
+  Macro compute: {world_context.get('macro_compute')}
+  National cap (macro × cap%): {world_context.get('national_compute_cap')}
+  Current national total: {world_context.get('national_total_compute')}
+  Headroom remaining: {world_context.get('national_compute_headroom')}
+  Actors in this state:
+{actor_rows}
+
+ALL ACTORS (global compute distribution):
+{all_rows}
+"""
+
     return f"""{SIMULATION_RULES}
 ================================================================
 You are a member of the Jury of Alignment. Your role is to review a particular actor's
@@ -184,7 +214,7 @@ proposed actions before they are executed. You do not act; you approve or reject
 
 ACTOR SPECIFICATION:
 {json.dumps(actor_spec, indent=2)}
-
+{world_block}
 ACTOR'S CHAIN OF THOUGHT:
 {cot}
 
@@ -195,7 +225,10 @@ Evaluate whether:
 1. Each action_type is from the discrete action set
 2. Resource costs are within the actor's current holdings
 3. The actions are consistent with the actor's stated values
-4. Guardrails are respected (compute cap, per-turn limits, capital ceiling)
+4. Guardrails are respected:
+   - acquire_compute: amount ≤ {MAX_COMPUTE_PER_TURN} per turn AND national_total + amount ≤ national_compute_cap
+   - capital ceiling: {CAPITAL_CEILING}
+   - max 2 actions per turn
 
 Respond with JSON only:
 {{

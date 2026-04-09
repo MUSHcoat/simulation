@@ -2,18 +2,22 @@
 """
 Simulation engine: year-by-year timestep loop.
 
-Turn structure per spec (Section 5.2):
-  1. Particular actors move simultaneously — CoT + action proposals
-  2. Jury of Alignment review — approve or request revision
-  3. Action execution — resource costs deducted; guardrails enforced
-  4. Grand Jury — commits changes; produces Vibe Prosperity Score
-  5. Macro Jury vote — each state updates its Macro values
+Turn structure per spec:
+  0. Scheduled events injected — world state modified immediately (bypasses rate limits)
+  1. Particular actors propose simultaneously — CoT + action proposals against frozen snapshot
+  2. Jury of Alignment review — approve or request revision (up to 2 revisions; forfeit if rejected)
+  3. Batch execute — resource costs deducted; zero-sum dilution applied; guardrails re-validated
+  4. invest_capital gains flushed — deferred gains applied after all executions; snapshots re-taken
+  5. Grand Jury — evaluates holistic world state; produces Vibe Prosperity Score
+  6. Lobby pressure applied — mechanical 1pt/axis nudge toward lobbyist's values
+  7. Post-execution context rebuilt — MacroJury sees post-execution, post-lobby world state
+  8. Macro Jury vote — each state's values updated by median aggregation (±5/turn rate limit)
+  9. Scoring — formula + vibe scores computed; relative deltas vs. pre-simulation baseline logged
 """
 
 import json
 import logging
 import os
-from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -78,7 +82,6 @@ class SimulationEngine:
             f"=== Simulation start: {self.scenario_name} "
             f"({self.start_year}–{self.start_year + years - 1}) ==="
         )
-        # Capture baseline formula scores at t=0
         snap0 = self._world_snapshot()
         self.baseline_scores = compute_all_scores(
             snap0, 50.0, self.formula_weights, self.overall_weights
@@ -102,10 +105,6 @@ class SimulationEngine:
         year = self.current_year
         record: Dict[str, Any] = {"year": year, "phases": {}}
 
-        # Reset per-turn A2A budgets
-        for actor in self.micro_agents:
-            actor.reset_turn_budget()
-
         # --- Inject scheduled events ---
         active_events = [e for e in self.events if e.get("year") == year]
         if active_events:
@@ -114,19 +113,19 @@ class SimulationEngine:
                 self._inject_event(event)
         record["events"] = [e.get("name", "") for e in active_events]
 
-        # --- Universal context (world state visible to all) ---
+        # --- Universal context (pre-execution world state visible to all) ---
         universal_ctx = build_universal_context(
             year=year,
             scenario_name=self.scenario_name,
             world_snapshot=self._world_snapshot(),
         )
 
-        # --- Phase 1 + 2 + 3: Actors propose → Jury reviews → Execute ---
-        logger.info("  Phase 1–3: Actor proposals, jury review, action execution")
+        # --- Phase 1 + 2 + 3: Simultaneous proposals → Jury review → Batch execute ---
+        logger.info("  Phase 1–3: Simultaneous proposals, jury review, batch execution")
         micro_results = self._run_actor_phase(universal_ctx)
         record["phases"]["actor_phase"] = micro_results
 
-        # --- Phase 4: Grand Jury ---
+        # --- Phase 4: Grand Jury (changes already committed in Phase 3) ---
         logger.info("  Phase 4: Grand Jury")
         world_snap = self._world_snapshot()
         gj_prompt = build_grand_jury_prompt(
@@ -139,9 +138,19 @@ class SimulationEngine:
         gj_result = self.grand_jury.evaluate(gj_prompt)
         record["grand_jury"] = gj_result
 
-        # --- Phase 5: Macro Jury ---
+        # --- Phase 5a: Apply mechanical lobby pressure before Macro Jury ---
+        self._apply_lobby_pressure(micro_results)
+
+        # --- Phase 5b: Rebuild context with post-execution + post-lobby world state ---
+        post_exec_ctx = build_universal_context(
+            year=year,
+            scenario_name=self.scenario_name,
+            world_snapshot=self._world_snapshot(),
+        )
+
+        # --- Phase 5c: Macro Jury (sees fresh post-execution context) ---
         logger.info("  Phase 5: Macro Jury")
-        macro_updates = self._run_macro_phase(universal_ctx, micro_results, gj_result)
+        macro_updates = self._run_macro_phase(post_exec_ctx, micro_results, gj_result)
         record["phases"]["macro_phase"] = macro_updates
 
         # --- Scoring ---
@@ -171,36 +180,47 @@ class SimulationEngine:
 
     def _run_actor_phase(self, universal_ctx: str) -> List[Dict[str, Any]]:
         """
-        Phases 1–3 combined:
-          1. All actors produce CoT + action proposals simultaneously.
-          2. JuryOfAlignment reviews each; actor may revise up to MAX_JURY_REVISIONS times.
-             If still rejected after all revisions, the actor's turn is forfeit.
-          3. Validated actions are executed; resources updated.
+        Phases 1–3:
+          1+2. All actors propose simultaneously (against the same pre-execution world
+               snapshot). Jury reviews each; actor may revise up to MAX_JURY_REVISIONS
+               times. If still rejected, the actor's turn is forfeit.
+          3.   After ALL proposals are collected, execute them in batch order.
+               Actors that proposed against the same snapshot may contend on compute
+               (zero-sum); re-validation at execution time handles contention.
+          Post-execution: flush deferred invest_capital gains.
         """
         MAX_JURY_REVISIONS = 2
-        results = []
+
+        # ---- Phase 1+2: Collect proposals (world unchanged throughout) ----
+        pending: List[Dict[str, Any]] = []
         for actor in self.micro_agents:
             logger.info(f"    Actor: {actor.name}")
             parent_macro = self._get_macro(actor.parent_state)
 
-            # --- Phase 1: Actor proposes ---
+            # Personal A2A messages from last turn + world events injected this turn
+            prior_messages = self.channel.receive(actor.name, year=self.current_year - 1)
+            world_events_now = [
+                m for m in self.channel.full_log()
+                if m["year"] == self.current_year and m["message_type"] == "world_event"
+            ]
             prompt = build_micro_action_prompt(
                 actor=actor,
                 parent_macro=parent_macro,
                 universal_ctx=universal_ctx,
                 year=self.current_year,
-                personal_messages=self.channel.receive(actor.name, year=self.current_year - 1),
+                personal_messages=prior_messages + world_events_now,
             )
             raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
             final_response = parse_json_response(raw)
             cot = final_response.get("chain_of_thought", raw[:500])
             proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
-            # --- Phase 2: Jury of Alignment — up to MAX_JURY_REVISIONS revision rounds ---
+            world_ctx = self._alignment_world_context(actor)
             review = self.alignment_jury.review(
                 actor_spec=actor.snapshot(),
                 cot=cot,
                 proposed_actions=proposed_actions,
+                world_context=world_ctx,
             )
 
             revision = 0
@@ -222,27 +242,40 @@ class SimulationEngine:
                     actor_spec=actor.snapshot(),
                     cot=cot,
                     proposed_actions=proposed_actions,
+                    world_context=world_ctx,
                 )
 
             forfeited = not review["approved"]
             if forfeited:
                 logger.info(f"      Turn forfeited after {MAX_JURY_REVISIONS} rejections")
 
-            # --- Phase 3: Execute validated actions (skip if forfeited) ---
+            pending.append({
+                "actor": actor,
+                "final_response": final_response,
+                "proposed_actions": proposed_actions,
+                "cot": cot,
+                "review": review,
+                "forfeited": forfeited,
+            })
+
+        # ---- Phase 3: Batch-execute all proposals ----
+        results = []
+        for p in pending:
+            actor = p["actor"]
             executed, errors = [], []
-            if not forfeited:
-                for action in proposed_actions:
+
+            if not p["forfeited"]:
+                for action in p["proposed_actions"]:
+                    # Re-validate against live world (handles zero-sum contention)
                     err = validate_action(action, actor, self.macro_agents, self.micro_agents)
                     if err:
                         errors.append({"action": action, "error": err})
-                        logger.info(f"      Action blocked: {err}")
+                        logger.info(f"      Action blocked at execution: {err}")
                     else:
                         effect = execute_action(action, actor, self.macro_agents, self.micro_agents)
                         executed.append(effect)
 
-            # Send actor's A2A messages from the final (most revised) response only
-            if not forfeited:
-                for msg in final_response.get("a2a_messages", []):
+                for msg in p["final_response"].get("a2a_messages", []):
                     recipient = msg.get("recipient", "")
                     content = msg.get("content", "")
                     if recipient and recipient != "*" and content:
@@ -256,40 +289,87 @@ class SimulationEngine:
 
             actor.history.append({
                 "year": self.current_year,
-                "cot": cot[:300],
+                "cot": p["cot"][:300],
                 "executed": executed,
                 "errors": errors,
-                "jury_feedback": review["feedback"][:200] if review["feedback"] else "",
-                "forfeited": forfeited,
+                "jury_feedback": p["review"]["feedback"][:200] if p["review"]["feedback"] else "",
+                "forfeited": p["forfeited"],
             })
 
             results.append({
                 "actor": actor.name,
                 "parent_state": actor.parent_state,
-                "chain_of_thought": cot,
-                "proposed_actions": proposed_actions,
-                "jury_approved": review["approved"],
-                "jury_feedback": review["feedback"],
-                "forfeited": forfeited,
+                "chain_of_thought": p["cot"],
+                "proposed_actions": p["proposed_actions"],
+                "jury_approved": p["review"]["approved"],
+                "jury_feedback": p["review"]["feedback"],
+                "forfeited": p["forfeited"],
                 "executed_actions": executed,
                 "blocked_actions": errors,
                 "snapshot_after": actor.snapshot(),
             })
 
+        # ---- Flush deferred invest_capital gains (after all executions) ----
+        for actor in self.micro_agents:
+            if actor.pending_capital_gain > 0:
+                gain = actor.pending_capital_gain
+                actor.apply_resource_delta(capital_delta=gain)
+                logger.info(
+                    f"    {actor.name}: invest_capital gain flushed +{gain:.2f} → {actor.capital:.1f}"
+                )
+                actor.pending_capital_gain = 0.0
+
+        # ---- Re-take snapshot_after now that capital flush is complete ----
+        for result, p in zip(results, pending):
+            result["snapshot_after"] = p["actor"].snapshot()
+
         return results
 
-    def _run_macro_phase(self, universal_ctx: str, micro_results: List[Dict],
+    def _apply_lobby_pressure(self, micro_results: List[Dict[str, Any]]) -> None:
+        """
+        Phase 5a: Mechanical lobby pressure applied before MacroJury deliberates.
+        Each successful lobby_institution action nudges the parent state's values
+        1 point per axis toward the lobbying actor's values.
+        The MacroJury then deliberates from these nudged starting values.
+        """
+        for result in micro_results:
+            if result.get("forfeited"):
+                continue
+            lobbied = any(
+                eff.get("action_type") == "lobby_institution"
+                for eff in result.get("executed_actions", [])
+            )
+            if not lobbied:
+                continue
+
+            actor_values = result["snapshot_after"]["values"]
+            state = self._get_macro(result["parent_state"])
+            if state is None:
+                continue
+
+            logger.info(f"    Lobby pressure: {result['actor']} → {state.name}")
+            for axis, actor_val in actor_values.items():
+                if axis not in state.values:
+                    continue
+                state_val = state.values[axis]
+                if actor_val == state_val:
+                    continue
+                delta = 1 if actor_val > state_val else -1
+                state.values[axis] = max(0, min(100, state_val + delta))
+                logger.info(f"      {axis}: {state_val} → {state.values[axis]}")
+
+    def _run_macro_phase(self, post_exec_ctx: str, micro_results: List[Dict],
                          gj_result: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Phase 5: MacroJury for each state updates Macro values."""
+        """Phase 8: MacroJury for each state updates Macro values."""
         updates = []
         for state in self.macro_agents:
             logger.info(f"    MacroJury: {state.name}")
-            jury = MacroJury(state.llm_models or self.jury_models)
+            jury = MacroJury(self.jury_models)
 
             own_actors = [r for r in micro_results if r["parent_state"] == state.name]
             prompt = build_macro_jury_prompt(
                 state=state,
-                universal_ctx=universal_ctx,
+                universal_ctx=post_exec_ctx,
                 year=self.current_year,
                 own_actor_results=own_actors,
                 grand_jury_result=gj_result,
@@ -317,7 +397,6 @@ class SimulationEngine:
     def _inject_event(self, event: Dict[str, Any]) -> None:
         logger.info(f"  EVENT: {event.get('name', 'unnamed')}")
 
-        # Macro resource shifts
         for state_name, shifts in event.get("macro_resource_shifts", {}).items():
             state = self._get_macro(state_name)
             if state:
@@ -326,7 +405,6 @@ class SimulationEngine:
                         old = getattr(state, attr)
                         setattr(state, attr, max(0.0, min(100.0, old + delta)))
 
-        # Macro value shifts
         for state_name, shifts in event.get("macro_value_shifts", {}).items():
             state = self._get_macro(state_name)
             if state:
@@ -334,7 +412,6 @@ class SimulationEngine:
                     if axis in state.values:
                         state.values[axis] = max(0, min(100, state.values[axis] + delta))
 
-        # Micro resource/value shifts
         for actor_name, shifts in event.get("micro_shifts", {}).items():
             actor = next((a for a in self.micro_agents if a.name == actor_name), None)
             if actor:
@@ -346,7 +423,6 @@ class SimulationEngine:
                     if axis in shifts:
                         actor.values[axis] = max(0, min(100, actor.values[axis] + shifts[axis]))
 
-        # Broadcast event
         self.channel.broadcast_world_event(
             description=event.get("description", event.get("name", "World event")),
             year=self.current_year,
@@ -356,6 +432,38 @@ class SimulationEngine:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _alignment_world_context(self, actor: MicroAgent) -> dict:
+        """Build the national-aggregate context needed by the JuryOfAlignment."""
+        from .actions import NATIONAL_COMPUTE_CAPS
+        parent_macro = self._get_macro(actor.parent_state)
+        national_actors = [
+            {"name": a.name, "compute": round(a.compute, 2),
+             "capital": round(a.capital, 2), "influence": round(a.influence, 2)}
+            for a in self.micro_agents if a.parent_state == actor.parent_state
+        ]
+        national_total_compute = sum(a["compute"] for a in national_actors)
+        cap_frac = NATIONAL_COMPUTE_CAPS.get(actor.parent_state)
+        national_compute_cap = (
+            round(parent_macro.compute * cap_frac, 2)
+            if parent_macro and cap_frac else None
+        )
+        return {
+            "parent_state": actor.parent_state,
+            "macro_compute": parent_macro.compute if parent_macro else None,
+            "national_actors": national_actors,
+            "national_total_compute": round(national_total_compute, 2),
+            "national_compute_cap": national_compute_cap,
+            "national_compute_headroom": (
+                round(national_compute_cap - national_total_compute, 2)
+                if national_compute_cap is not None else None
+            ),
+            "all_actors": [
+                {"name": a.name, "parent_state": a.parent_state,
+                 "compute": round(a.compute, 2)}
+                for a in self.micro_agents
+            ],
+        }
 
     def _get_macro(self, state_name: str) -> Optional[MacroAgent]:
         return next((s for s in self.macro_agents if s.name == state_name), None)
@@ -402,7 +510,6 @@ def _extract_actions(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     actions = response.get("actions")
     if isinstance(actions, list):
         return [a for a in actions if isinstance(a, dict)]
-    # Single-action fallback
     if "action_type" in response:
         return [response]
     return []

@@ -25,34 +25,31 @@
         "risk_tolerance": 55,
         "democratic_tendency": 20
       }
-    },
-    "residual_pool": {
-      "compute": 4
     }
   },
 
   "micro": {
     "Claude (Anthropic)": {
       "parent_state": "United States",
-      "compute": 10,
+      "compute": 4,
       "capital": 60,
       "influence": 65
     },
     "GPT (OpenAI)": {
       "parent_state": "United States",
-      "compute": 18,
+      "compute": 8,
       "capital": 68,
       "influence": 70
     },
     "Gemini (Google DeepMind)": {
       "parent_state": "United States",
-      "compute": 10,
+      "compute": 4,
       "capital": 72,
       "influence": 68
     },
     "DeepSeek (DeepSeek AI)": {
       "parent_state": "China",
-      "compute": 10,
+      "compute": 3,
       "capital": 52,
       "influence": 50
     }

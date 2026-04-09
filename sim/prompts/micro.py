@@ -54,7 +54,7 @@ def build_micro_action_prompt(
                 if m.get("message_type") != "world_event" and m.get("sender") != actor.name]
 
     if world_events:
-        parts.append("WORLD EVENTS (last turn):")
+        parts.append("WORLD EVENTS:")
         for msg in world_events:
             parts.append(f"  [WORLD]: {msg['content']}")
         parts.append("")
@@ -83,7 +83,7 @@ def build_micro_action_prompt(
         '      "amount": <float>,\n'
         '      "target": "<actor name, publish_narrative only>",\n'
         '      "value_axis": "<axis name, publish_narrative only>",\n'
-        '      "value_delta": <int -10..+10, publish_narrative only>,\n'
+        '      "value_delta": <int -5..+5, publish_narrative only>,\n'
         '      "rationale": "<why>"\n'
         '    }\n'
         '  ],\n'

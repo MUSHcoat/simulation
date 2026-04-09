@@ -6,7 +6,6 @@ Usage:
   python main.py --years 10 --scenario baseline_2026 --output data/logs/run_001/
 
   python main.py --years 5 --scenario nationalization_shock \\
-    --macro-model claude-sonnet-4-6 \\
     --jury-model claude-sonnet-4-6 \\
     --w-compute 0.5 --w-capital 0.3 --w-influence 0.2 \\
     --w-formula 0.6 --w-vibe 0.4
@@ -50,7 +49,7 @@ def _load_starting_values() -> dict:
     return {}
 
 
-def _load_states(macro_model: str, overrides: dict) -> list:
+def _load_states(overrides: dict) -> list:
     state_dir = os.path.join(BASE_DIR, "config", "states")
     sv = overrides.get("macro", {})
     agents = []
@@ -69,10 +68,6 @@ def _load_states(macro_model: str, overrides: dict) -> list:
                                    cfg.get("supply_chain_robustness", 50))
         values     = {**cfg.get("values", {}), **sv_state.get("values", {})}
 
-        models = cfg.get("llm_models", [macro_model, macro_model, macro_model])
-        if macro_model:
-            models = [macro_model] * 3
-
         agent = MacroAgent(
             name=name,
             narrative=cfg["narrative"],
@@ -81,7 +76,6 @@ def _load_states(macro_model: str, overrides: dict) -> list:
             influence=float(influence),
             supply_chain_robustness=float(scr),
             values=values,
-            llm_models=models,
         )
         agents.append(agent)
     return agents
@@ -142,13 +136,12 @@ def main():
                         help="Starting year")
     parser.add_argument("--scenario",    default="baseline_2026",
                         help="Scenario key from config/scenarios.json")
-    parser.add_argument("--macro-model", default="claude-sonnet-4-6",
-                        help="LLM model for macro-level state juries")
     parser.add_argument("--micro-model", default=None,
                         help="Override LLM model for all particular actors "
                              "(default: each actor uses the model in its config)")
-    parser.add_argument("--jury-model",  default="claude-sonnet-4-6",
-                        help="LLM model for alignment jury and grand jury")
+    parser.add_argument("--jury-model",  default=None,
+                        help="Override all 3 jury slots with a single model "
+                             "(default: diverse panel of claude-sonnet-4-6, gpt-4o, gemini-1.5-pro)")
     parser.add_argument("--output",      default="data/logs",
                         help="Output directory for logs")
     parser.add_argument("--verbose",     action="store_true",
@@ -202,11 +195,14 @@ def main():
     logger.info(f"  Formula weights: {formula_weights}")
     logger.info(f"  Overall weights: {overall_weights}")
 
-    macro_agents = _load_states(args.macro_model, sv)
+    macro_agents = _load_states(sv)
     micro_agents = _load_actors(args.micro_model, sv)
     events = _load_scenario_events(args.scenario)
 
-    jury_models = [args.jury_model] * 3
+    if args.jury_model:
+        jury_models = [args.jury_model] * 3
+    else:
+        jury_models = ["claude-sonnet-4-6", "gpt-4o", "gemini-1.5-pro"]
 
     logger.info(
         f"  States: {[a.name for a in macro_agents]}\n"

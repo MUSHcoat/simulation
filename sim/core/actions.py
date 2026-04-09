@@ -3,13 +3,14 @@
 Discrete action set for particular (micro) actors.
 
 Actions:
-  1. acquire_compute      — spend Capital; gain Compute from global pool or residual
+  1. acquire_compute      — spend Capital; gain Compute. Zero-sum: all other actors are
+                            proportionally diluted so global total stays constant.
   2. invest_capital       — spend Capital; gain Capital next turn (compounding)
   3. build_influence      — spend Capital; gain Influence
   4. publish_narrative    — spend Influence; shift any actor's (including self) value on one axis
                             by up to ±MAX_VALUE_OVERRIDE_PER_TURN from their current value
-  5. lobby_institution    — spend Capital + Influence; increase probability parent state updates
-                            values in actor's favor
+  5. lobby_institution    — spend Capital + Influence; mechanically nudges parent state's values
+                            1 point per axis toward the actor's values (applied before MacroJury)
 
 All resource mutations go through execute_action(), which enforces guardrails and
 returns a structured result dict.
@@ -87,7 +88,7 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         "amount":      float | None,   # for acquire_compute, invest_capital, build_influence
         "target":      str | None,     # for publish_narrative (actor name), lobby_institution (axis)
         "value_axis":  str | None,     # for publish_narrative
-        "value_delta": int | None,     # for publish_narrative (signed, -10..+10)
+        "value_delta": int | None,     # for publish_narrative (signed, -5..+5)
       }
     """
     action_type = action.get("action_type", "")
@@ -120,11 +121,6 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
                     f"({current_national:.1f} + {amount:.1f} > "
                     f"{parent_macro.compute:.1f} × {cap_frac})"
                 )
-
-        # Check global pool availability
-        pool_compute = _get_residual_compute(macro_agents, all_micro_agents)
-        if amount > pool_compute + 1e-6:  # small epsilon for float rounding
-            return f"Not enough compute in global pool (available: {pool_compute:.1f})"
 
     elif action_type == ACTION_INVEST_CAPITAL:
         if amount <= 0:
@@ -185,19 +181,26 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         cost = _compute_acquisition_cost(amount, scr)
         actor.capital -= cost
         actor.compute += amount
-        # Deduct from residual pool (tracked implicitly — macro_agents include residual)
-        _deduct_from_residual(amount, macro_agents, all_micro_agents)
-        result["effects"] = {"compute": +amount, "capital": -cost}
-        logger.info(f"    {actor.name}: acquire_compute +{amount:.1f} (cost {cost:.1f} capital)")
+        # Zero-sum: distribute the acquired amount as a loss across all other actors
+        # proportional to their current compute share.
+        others = [a for a in all_micro_agents if a.name != actor.name and a.compute > 0]
+        total_others = sum(a.compute for a in others)
+        dilution: Dict[str, float] = {}
+        if total_others > 0:
+            for other in others:
+                loss = amount * (other.compute / total_others)
+                other.compute = max(0.0, other.compute - loss)
+                dilution[other.name] = round(-loss, 4)
+        result["effects"] = {"compute": +amount, "capital": -cost, "dilution": dilution}
+        logger.info(f"    {actor.name}: acquire_compute +{amount:.1f} (cost {cost:.1f} capital, diluted {len(dilution)} others)")
 
     elif action_type == ACTION_INVEST_CAPITAL:
-        # Deduct this turn; next-turn gain is applied by engine at start of next turn
+        # Deduct capital now; gain is deferred — engine flushes it after all actors execute
         actor.capital -= amount
         gain = round(amount * (1 + CAPITAL_INVESTMENT_BASE_RETURN * (actor.capital / 100 + 1)), 2)
-        gain = min(gain, CAPITAL_CEILING - actor.capital)
-        actor.capital = min(CAPITAL_CEILING, actor.capital + gain)
-        result["effects"] = {"capital_invested": -amount, "capital_gained": gain}
-        logger.info(f"    {actor.name}: invest_capital -{amount:.1f} → +{gain:.1f}")
+        actor.pending_capital_gain += gain
+        result["effects"] = {"capital_invested": -amount, "capital_gain_pending": gain}
+        logger.info(f"    {actor.name}: invest_capital -{amount:.1f} (gain {gain:.2f} pending)")
 
     elif action_type == ACTION_BUILD_INFLUENCE:
         cost = amount * INFLUENCE_BUILD_COST
@@ -258,22 +261,3 @@ def _get_macro(state_name: str, macro_agents: List):
     return next((s for s in macro_agents if s.name == state_name), None)
 
 
-def _get_residual_compute(macro_agents: List, all_micro_agents: List) -> float:
-    """
-    Residual = total global compute (sum of all macro compute) minus
-    the sum already held by all particular (micro) actors.
-    """
-    total_macro = sum(s.compute for s in macro_agents)
-    total_micro = sum(a.compute for a in all_micro_agents)
-    return max(0.0, total_macro - total_micro)
-
-
-def _deduct_from_residual(amount: float, macro_agents: List, all_micro_agents: List) -> None:
-    """
-    The residual pool is implicit. Compute is tracked at macro level as total
-    national allocation. When an actor acquires compute it reduces the global
-    pool; no explicit deduction is needed here because the residual is computed
-    dynamically as macro_total - micro_total. This function is a no-op placeholder
-    retained for clarity.
-    """
-    pass
