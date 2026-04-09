@@ -9,6 +9,8 @@ of each turn and produces the Vibe-Based Universal Prosperity Score (0–100).
 import json
 from typing import Any, Dict, List
 
+from .universal import SIMULATION_RULES
+
 
 def build_grand_jury_prompt(
     year: int,
@@ -59,7 +61,10 @@ def build_grand_jury_prompt(
     actor_block  = "\n".join(actor_lines)  or "  No data."
     comm_block   = "\n".join(comm_lines)   or "  No communications."
 
-    return f"""You are a member of the Grand Jury evaluating the state of the world in Year {year}.
+    return f"""{SIMULATION_RULES}
+================================================================
+You are a member of the Grand Jury evaluating the state of the world in Year {year}.
+Your role is external observer — you do not act; you assess.
 
 SCENARIO: {scenario_name}
 

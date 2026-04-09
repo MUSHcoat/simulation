@@ -4,7 +4,7 @@ Universal context injected into all prompts.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 
 SIMULATION_RULES = """\
@@ -19,7 +19,7 @@ ROLES:
 - Macro actors (nation-states) have no communication channel and cannot be directly messaged.
 
 RESOURCES (0–100 unless noted):
-- Compute   — share of global advanced GPU capacity. GLOBALLY ZERO-SUM across all actors + residual pool.
+- Compute   — share of global advanced GPU capacity. GLOBALLY ZERO-SUM: one actor's gain is another's loss.
 - Capital   — company's spendable budget (0–100, ceiling 90). Not globally zero-sum.
 - Influence — company's social and political capital (0–100). Not globally zero-sum.
 
@@ -31,13 +31,14 @@ VALUES (all 0–100, inherited from parent state; you may deviate ±5 per axis p
 
 DISCRETE ACTION SET (max 2 actions per turn):
   acquire_compute    — Cost: Capital (varies with parent state Supply Chain Robustness)
-                       Effect: +Compute to you; −Compute from global pool
+                       Effect: +Compute to you; −Compute globally
   invest_capital     — Cost: Capital
                        Effect: +Capital next turn (compounding; ceiling 90)
   build_influence    — Cost: Capital
                        Effect: +Influence
   publish_narrative  — Cost: Influence
-                       Effect: shifts a target actor's public value on one axis
+                       Effect: shifts any actor's value on one axis by up to ±5 from their current
+                               value (target can be yourself or another actor)
   lobby_institution  — Cost: Capital + Influence
                        Effect: increases probability parent state updates its values in your favor
 
@@ -64,7 +65,6 @@ def build_universal_context(
     year: int,
     scenario_name: str,
     world_snapshot: Dict[str, Any],
-    active_events: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     lines = [SIMULATION_RULES]
     lines.append(f"\n=== YEAR {year} | SCENARIO: {scenario_name} ===\n")
@@ -92,17 +92,5 @@ def build_universal_context(
             f"compute={actor['compute']:.1f}, capital={actor['capital']:.1f}, "
             f"influence={actor['influence']:.1f}"
         )
-
-    # Residual pool
-    macro_total = sum(s["compute"] for s in world_snapshot.get("macro_agents", []))
-    micro_total = sum(a["compute"] for a in world_snapshot.get("micro_agents", []))
-    residual = max(0.0, macro_total - micro_total)
-    lines.append(f"\nRESIDUAL COMPUTE POOL: {residual:.1f}")
-
-    # Active events
-    if active_events:
-        lines.append("\nACTIVE WORLD EVENTS THIS YEAR:")
-        for event in active_events:
-            lines.append(f"  • {event.get('name', 'Event')}: {event.get('description', '')}")
 
     return "\n".join(lines)

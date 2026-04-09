@@ -50,23 +50,11 @@
       "capital": 72,
       "influence": 68
     },
-    "Qwen (Alibaba)": {
+    "DeepSeek (DeepSeek AI)": {
       "parent_state": "China",
-      "compute": 4,
-      "capital": 58,
-      "influence": 52
-    },
-    "Doubao (ByteDance)": {
-      "parent_state": "China",
-      "compute": 3,
-      "capital": 55,
-      "influence": 48
-    },
-    "Kimi (Moonshot AI)": {
-      "parent_state": "China",
-      "compute": 3,
-      "capital": 45,
-      "influence": 40
+      "compute": 10,
+      "capital": 52,
+      "influence": 50
     }
   },
 

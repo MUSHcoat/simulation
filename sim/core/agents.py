@@ -103,19 +103,17 @@ class MicroAgent:
             "values": dict(self.values),
         }
 
-    def apply_value_override(self, proposed_values: Dict[str, int],
-                             parent_values: Dict[str, int]) -> None:
+    def apply_value_override(self, proposed_values: Dict[str, int]) -> None:
         """
-        Apply value overrides, enforcing the ±5/turn rate-limit relative to
-        the parent state's current values.
+        Apply value overrides, enforcing ±MAX_VALUE_OVERRIDE_PER_TURN relative to
+        the actor's own current values. This allows gradual drift over time.
         """
         for axis, proposed in proposed_values.items():
             if axis not in self.values:
                 continue
-            parent_val = parent_values.get(axis, 50)
-            # Clamp deviation from parent to ±MAX_VALUE_OVERRIDE_PER_TURN
-            max_deviation = MAX_VALUE_OVERRIDE_PER_TURN
-            clamped = max(parent_val - max_deviation, min(parent_val + max_deviation, proposed))
+            current = self.values[axis]
+            clamped = max(current - MAX_VALUE_OVERRIDE_PER_TURN,
+                          min(current + MAX_VALUE_OVERRIDE_PER_TURN, proposed))
             self.values[axis] = max(0, min(100, clamped))
 
     def apply_resource_delta(self, compute_delta: float = 0,

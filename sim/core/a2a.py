@@ -2,13 +2,10 @@
 """
 Agent-to-Agent (A2A) communication channel.
 
-Rules (per spec):
-- Communication is between particular (micro) actors only.
-- Each actor has an outgoing token budget of 500 tokens per turn.
-  Messages exceeding the remaining budget are truncated.
-- Incoming messages do not count against the budget.
-- All messages are logged verbatim (no transparency filtering in v1 —
-  public = private).
+Rules:
+- Personal messages only — no broadcasts between actors.
+- Each actor has a 500-token outgoing budget per turn; excess is truncated.
+- World events are broadcast via broadcast_world_event() (exempt from budget).
 """
 
 import logging
@@ -52,11 +49,15 @@ class A2AChannel:
 
     def send(self, sender: str, recipient: str, content: str, year: int,
              message_type: str = "a2a",
-             metadata: Optional[Dict[str, Any]] = None) -> Message:
+             metadata: Optional[Dict[str, Any]] = None) -> Optional[Message]:
         """
-        Send a message from `sender` to `recipient`.
+        Send a personal message from `sender` to a specific `recipient`.
+        Broadcasts (recipient="*") are rejected — use broadcast_world_event() for that.
         Truncates content if the sender's outgoing token budget is exhausted.
         """
+        if recipient == "*":
+            logger.warning(f"A2A [{year}] {sender}: broadcast rejected — use broadcast_world_event()")
+            return None
         if year not in self._budgets:
             self._budgets[year] = {}
         used = self._budgets[year].get(sender, 0)
@@ -113,25 +114,18 @@ class A2AChannel:
 
     def receive(self, recipient: str, year: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Return all messages addressed to `recipient` (or broadcast "*")
-        for the given year. Full fidelity — no filtering in v1.
+        Return messages visible to `recipient` for the given year:
+        - Personal messages addressed directly to them
+        - World event broadcasts (WORLD → *)
         """
         results = []
         for msg in self._log:
             if year is not None and msg.year != year:
                 continue
-            if msg.recipient != "*" and msg.recipient != recipient:
-                continue
-            results.append(self._serialize(msg))
-        return results
-
-    def get_public_log(self, year: Optional[int] = None) -> List[Dict[str, Any]]:
-        """All messages for the given year (public = private in v1)."""
-        results = []
-        for msg in self._log:
-            if year is not None and msg.year != year:
-                continue
-            results.append(self._serialize(msg))
+            is_personal = msg.recipient == recipient
+            is_world_event = msg.message_type == "world_event"
+            if is_personal or is_world_event:
+                results.append(self._serialize(msg))
         return results
 
     def tokens_remaining(self, actor: str, year: int) -> int:

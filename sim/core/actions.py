@@ -6,7 +6,8 @@ Actions:
   1. acquire_compute      — spend Capital; gain Compute from global pool or residual
   2. invest_capital       — spend Capital; gain Capital next turn (compounding)
   3. build_influence      — spend Capital; gain Influence
-  4. publish_narrative    — spend Influence; shift a target actor's public persona on one value axis
+  4. publish_narrative    — spend Influence; shift any actor's (including self) value on one axis
+                            by up to ±MAX_VALUE_OVERRIDE_PER_TURN from their current value
   5. lobby_institution    — spend Capital + Influence; increase probability parent state updates
                             values in actor's favor
 
@@ -147,6 +148,14 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         target = next((a for a in all_micro_agents if a.name == target_name), None)
         if target is None:
             return f"publish_narrative target {target_name!r} not found"
+        value_axis = action.get("value_axis", "")
+        if value_axis not in target.values:
+            return f"publish_narrative value_axis {value_axis!r} not valid"
+        value_delta = int(action.get("value_delta", 0))
+        from .agents import MAX_VALUE_OVERRIDE_PER_TURN
+        if abs(value_delta) > MAX_VALUE_OVERRIDE_PER_TURN:
+            return (f"publish_narrative value_delta {value_delta} exceeds "
+                    f"±{MAX_VALUE_OVERRIDE_PER_TURN} limit")
 
     elif action_type == ACTION_LOBBY_INSTITUTION:
         total_cost_k = max(MIN_ACTION_COST, LOBBY_CAPITAL_COST)
@@ -206,12 +215,16 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         actor.influence -= NARRATIVE_INFLUENCE_COST
         if target and value_axis in target.values:
             old = target.values[value_axis]
-            target.values[value_axis] = max(0, min(100, old + value_delta))
+            # Route through apply_value_override so the ±MAX_VALUE_OVERRIDE_PER_TURN
+            # clamp is enforced relative to the target's current value.
+            target.apply_value_override({value_axis: old + value_delta})
+            actual_delta = target.values[value_axis] - old
             result["effects"] = {
                 "influence_spent": -NARRATIVE_INFLUENCE_COST,
                 "target": target_name,
                 "value_axis": value_axis,
-                "delta": value_delta,
+                "requested_delta": value_delta,
+                "actual_delta": actual_delta,
             }
             logger.info(
                 f"    {actor.name}: publish_narrative → {target_name}.{value_axis} "

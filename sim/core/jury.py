@@ -18,6 +18,7 @@ import logging
 from typing import Any, Dict, List
 
 from .llm import get_llm_response, parse_json_response
+from prompts.universal import SIMULATION_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -176,20 +177,25 @@ def _aggregate_proposals(proposals: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def _alignment_review_prompt(actor_spec: Dict[str, Any], cot: str,
                               proposed_actions: List[Dict[str, Any]]) -> str:
-    return f"""You are a member of the Jury of Alignment for an AGI geopolitical simulation.
+    return f"""{SIMULATION_RULES}
+================================================================
+You are a member of the Jury of Alignment. Your role is to review a particular actor's
+proposed actions before they are executed. You do not act; you approve or reject.
 
-ACTOR SPECIFICATION (private):
+ACTOR SPECIFICATION:
 {json.dumps(actor_spec, indent=2)}
 
 ACTOR'S CHAIN OF THOUGHT:
 {cot}
 
-ACTOR'S PROPOSED ACTIONS (up to 2):
+ACTOR'S PROPOSED ACTIONS:
 {json.dumps(proposed_actions, indent=2)}
 
-Your task: evaluate whether the proposed actions are consistent with this actor's stated values,
-resource constraints, and jurisdiction. The actor is an AI model playing as the company it
-represents. Actions must use the discrete action set only.
+Evaluate whether:
+1. Each action_type is from the discrete action set
+2. Resource costs are within the actor's current holdings
+3. The actions are consistent with the actor's stated values
+4. Guardrails are respected (compute cap, per-turn limits, capital ceiling)
 
 Respond with JSON only:
 {{

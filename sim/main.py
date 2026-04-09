@@ -7,7 +7,6 @@ Usage:
 
   python main.py --years 5 --scenario nationalization_shock \\
     --macro-model claude-sonnet-4-6 \\
-    --micro-model claude-sonnet-4-6 \\
     --jury-model claude-sonnet-4-6 \\
     --w-compute 0.5 --w-capital 0.3 --w-influence 0.2 \\
     --w-formula 0.6 --w-vibe 0.4
@@ -145,8 +144,9 @@ def main():
                         help="Scenario key from config/scenarios.json")
     parser.add_argument("--macro-model", default="claude-sonnet-4-6",
                         help="LLM model for macro-level state juries")
-    parser.add_argument("--micro-model", default="claude-sonnet-4-6",
-                        help="LLM model for particular actor prompts")
+    parser.add_argument("--micro-model", default=None,
+                        help="Override LLM model for all particular actors "
+                             "(default: each actor uses the model in its config)")
     parser.add_argument("--jury-model",  default="claude-sonnet-4-6",
                         help="LLM model for alignment jury and grand jury")
     parser.add_argument("--output",      default="data/logs",

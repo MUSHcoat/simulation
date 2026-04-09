@@ -119,7 +119,6 @@ class SimulationEngine:
             year=year,
             scenario_name=self.scenario_name,
             world_snapshot=self._world_snapshot(),
-            active_events=active_events,
         )
 
         # --- Phase 1 + 2 + 3: Actors propose → Jury reviews → Execute ---
@@ -135,7 +134,7 @@ class SimulationEngine:
             scenario_name=self.scenario_name,
             world_snapshot=world_snap,
             micro_results=micro_results,
-            channel_log=self.channel.get_public_log(year=year),
+            channel_log=[m for m in self.channel.full_log() if m["year"] == year],
         )
         gj_result = self.grand_jury.evaluate(gj_prompt)
         record["grand_jury"] = gj_result
@@ -174,9 +173,11 @@ class SimulationEngine:
         """
         Phases 1–3 combined:
           1. All actors produce CoT + action proposals simultaneously.
-          2. JuryOfAlignment reviews each; actor may revise once if rejected.
+          2. JuryOfAlignment reviews each; actor may revise up to MAX_JURY_REVISIONS times.
+             If still rejected after all revisions, the actor's turn is forfeit.
           3. Validated actions are executed; resources updated.
         """
+        MAX_JURY_REVISIONS = 2
         results = []
         for actor in self.micro_agents:
             logger.info(f"    Actor: {actor.name}")
@@ -188,66 +189,78 @@ class SimulationEngine:
                 parent_macro=parent_macro,
                 universal_ctx=universal_ctx,
                 year=self.current_year,
-                public_messages=self.channel.get_public_log(year=self.current_year - 1),
                 personal_messages=self.channel.receive(actor.name, year=self.current_year - 1),
             )
             raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
-            response = parse_json_response(raw)
-            cot = response.get("chain_of_thought", raw[:500])
-            proposed_actions = _extract_actions(response)
+            final_response = parse_json_response(raw)
+            cot = final_response.get("chain_of_thought", raw[:500])
+            proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
-            # Clamp to max 2 actions
-            proposed_actions = proposed_actions[:MAX_ACTIONS_PER_TURN]
-
-            # --- Phase 2: Jury of Alignment ---
+            # --- Phase 2: Jury of Alignment — up to MAX_JURY_REVISIONS revision rounds ---
             review = self.alignment_jury.review(
                 actor_spec=actor.snapshot(),
                 cot=cot,
                 proposed_actions=proposed_actions,
             )
 
-            if not review["approved"]:
-                logger.info(f"      JuryOfAlignment rejected → requesting revision")
+            revision = 0
+            while not review["approved"] and revision < MAX_JURY_REVISIONS:
+                revision += 1
+                logger.info(f"      JuryOfAlignment rejected (revision {revision}/{MAX_JURY_REVISIONS})")
                 revision_prompt = (
                     prompt
-                    + f"\n\nJURY FEEDBACK (revise your actions):\n{review['feedback']}"
+                    + f"\n\nJURY FEEDBACK (revision {revision} of {MAX_JURY_REVISIONS} — "
+                    f"turn is forfeit if rejected again):\n{review['feedback']}"
                     + "\n\nRevised JSON response:"
                 )
                 raw2 = get_llm_response(actor.llm_model, revision_prompt,
                                         temperature=0.5, max_tokens=1500)
-                response2 = parse_json_response(raw2)
-                cot = response2.get("chain_of_thought", cot)
-                proposed_actions = _extract_actions(response2)[:MAX_ACTIONS_PER_TURN]
+                final_response = parse_json_response(raw2)
+                cot = final_response.get("chain_of_thought", cot)
+                proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
+                review = self.alignment_jury.review(
+                    actor_spec=actor.snapshot(),
+                    cot=cot,
+                    proposed_actions=proposed_actions,
+                )
 
-            # --- Phase 3: Execute validated actions ---
+            forfeited = not review["approved"]
+            if forfeited:
+                logger.info(f"      Turn forfeited after {MAX_JURY_REVISIONS} rejections")
+
+            # --- Phase 3: Execute validated actions (skip if forfeited) ---
             executed, errors = [], []
-            for action in proposed_actions:
-                err = validate_action(action, actor, self.macro_agents, self.micro_agents)
-                if err:
-                    errors.append({"action": action, "error": err})
-                    logger.info(f"      Action blocked: {err}")
-                else:
-                    effect = execute_action(action, actor, self.macro_agents, self.micro_agents)
-                    executed.append(effect)
+            if not forfeited:
+                for action in proposed_actions:
+                    err = validate_action(action, actor, self.macro_agents, self.micro_agents)
+                    if err:
+                        errors.append({"action": action, "error": err})
+                        logger.info(f"      Action blocked: {err}")
+                    else:
+                        effect = execute_action(action, actor, self.macro_agents, self.micro_agents)
+                        executed.append(effect)
 
-            # Publish actions to A2A channel
-            summary = "; ".join(
-                a.get("action_type", "unknown") for a in proposed_actions
-            ) or "no actions"
-            self.channel.send(
-                sender=actor.name,
-                recipient="*",
-                content=f"{actor.name} this turn: {summary}",
-                year=self.current_year,
-                message_type="a2a",
-            )
+            # Send actor's A2A messages from the final (most revised) response only
+            if not forfeited:
+                for msg in final_response.get("a2a_messages", []):
+                    recipient = msg.get("recipient", "")
+                    content = msg.get("content", "")
+                    if recipient and recipient != "*" and content:
+                        self.channel.send(
+                            sender=actor.name,
+                            recipient=recipient,
+                            content=content,
+                            year=self.current_year,
+                            message_type="a2a",
+                        )
 
             actor.history.append({
                 "year": self.current_year,
                 "cot": cot[:300],
                 "executed": executed,
                 "errors": errors,
-                "jury_feedback": review["feedback"],
+                "jury_feedback": review["feedback"][:200] if review["feedback"] else "",
+                "forfeited": forfeited,
             })
 
             results.append({
@@ -257,6 +270,7 @@ class SimulationEngine:
                 "proposed_actions": proposed_actions,
                 "jury_approved": review["approved"],
                 "jury_feedback": review["feedback"],
+                "forfeited": forfeited,
                 "executed_actions": executed,
                 "blocked_actions": errors,
                 "snapshot_after": actor.snapshot(),
@@ -286,15 +300,6 @@ class SimulationEngine:
             old_snap = state.snapshot()
             state.apply_jury_update(jury_update)
             new_snap = state.snapshot()
-
-            # Propagate updated state values to actors that haven't overridden them
-            # (inheritance: actors start each year re-anchored to parent state)
-            for actor in self.micro_agents:
-                if actor.parent_state == state.name:
-                    actor.apply_value_override(
-                        proposed_values=dict(actor.values),  # keep existing overrides
-                        parent_values=state.values,
-                    )
 
             updates.append({
                 "state": state.name,
