@@ -78,7 +78,7 @@ def build_macro_jury_prompt(
 
     # --- Grand Jury assessment ---
     parts.append("GRAND JURY WORLD ASSESSMENT THIS YEAR:")
-    parts.append(f"  Vibe score: {grand_jury_result.get('vibe_score', '?')}")
+    parts.append(f"  Universal Prosperity Score: {grand_jury_result.get('universal_prosperity_score', '?')}")
     parts.append(f"  Commentary: {grand_jury_result.get('commentary', '')}")
     parts.append(f"  Alignment: {grand_jury_result.get('alignment_assessment', '')}")
     parts.append(f"  Key risks: {grand_jury_result.get('key_risks', '')}")
@@ -92,7 +92,7 @@ Based on this year's events, actor behavior, and global developments, propose up
 VALUES for this state. Resources are NOT updated here — only value axes.
 
 Value axes (all 0–100) — current values and reachable range this turn (±{MAX_MACRO_VALUE_CHANGE_PER_TURN}):
-  time_horizon           {v.get('time_horizon', 50):>3}  → [{max(0, v.get('time_horizon', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('time_horizon', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=short-term, 100=century-long)
+  time_horizon           {v.get('time_horizon', 50):>3}  → [{max(0, v.get('time_horizon', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('time_horizon', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=short-term, 100=~50 years ahead planning)
   transparency_threshold {v.get('transparency_threshold', 50):>3}  → [{max(0, v.get('transparency_threshold', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('transparency_threshold', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=willing to deceive, 100=fully honest)
   risk_tolerance         {v.get('risk_tolerance', 50):>3}  → [{max(0, v.get('risk_tolerance', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('risk_tolerance', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=risk-averse, 100=risk-seeking)
   democratic_tendency    {v.get('democratic_tendency', 50):>3}  → [{max(0, v.get('democratic_tendency', 50) - MAX_MACRO_VALUE_CHANGE_PER_TURN)}–{min(100, v.get('democratic_tendency', 50) + MAX_MACRO_VALUE_CHANGE_PER_TURN)}]  (0=hoards power, 100=distributes it)

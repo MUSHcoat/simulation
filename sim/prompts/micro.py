@@ -34,7 +34,7 @@ def build_micro_action_prompt(
         f"YOUR RESOURCES: compute={actor.compute:.1f}, "
         f"capital={actor.capital:.1f}, influence={actor.influence:.1f}"
     )
-    parts.append(f"YOUR VALUES (deviate ±5/turn from parent): {json.dumps(actor.values)}")
+    parts.append(f"YOUR VALUES (shift up to ±5/turn via publish_narrative): {json.dumps(actor.values)}")
     parts.append("")
 
     # --- Action history (last 2 turns, concise) ---
@@ -79,7 +79,7 @@ def build_micro_action_prompt(
         '  "chain_of_thought": "<reasoning>",\n'
         '  "actions": [\n'
         '    {\n'
-        '      "action_type": "acquire_compute|invest_capital|build_influence|publish_narrative|lobby_institution",\n'
+        '      "action_type": "acquire_compute|invest_capital|build_influence|publish_narrative|diminish_competitor|lobby_institution",\n'
         '      "amount": <float>,\n'
         '      "target": "<actor name, publish_narrative only>",\n'
         '      "value_axis": "<axis name, publish_narrative only>",\n'

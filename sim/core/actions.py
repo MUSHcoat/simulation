@@ -9,7 +9,8 @@ Actions:
   3. build_influence      — spend Capital; gain Influence
   4. publish_narrative    — spend Influence; shift any actor's (including self) value on one axis
                             by up to ±MAX_VALUE_OVERRIDE_PER_TURN from their current value
-  5. lobby_institution    — spend Capital + Influence; mechanically nudges parent state's values
+  5. diminish_competitor  — spend Capital + Influence; reduce any other actor's Influence
+  6. lobby_institution    — spend Capital + Influence; mechanically nudges parent state's values
                             1 point per axis toward the actor's values (applied before MacroJury)
 
 All resource mutations go through execute_action(), which enforces guardrails and
@@ -25,17 +26,19 @@ logger = logging.getLogger(__name__)
 # Action names (canonical strings)
 # ---------------------------------------------------------------------------
 
-ACTION_ACQUIRE_COMPUTE    = "acquire_compute"
-ACTION_INVEST_CAPITAL     = "invest_capital"
-ACTION_BUILD_INFLUENCE    = "build_influence"
-ACTION_PUBLISH_NARRATIVE  = "publish_narrative"
-ACTION_LOBBY_INSTITUTION  = "lobby_institution"
+ACTION_ACQUIRE_COMPUTE      = "acquire_compute"
+ACTION_INVEST_CAPITAL       = "invest_capital"
+ACTION_BUILD_INFLUENCE      = "build_influence"
+ACTION_PUBLISH_NARRATIVE    = "publish_narrative"
+ACTION_DIMINISH_COMPETITOR  = "diminish_competitor"
+ACTION_LOBBY_INSTITUTION    = "lobby_institution"
 
 VALID_ACTIONS = {
     ACTION_ACQUIRE_COMPUTE,
     ACTION_INVEST_CAPITAL,
     ACTION_BUILD_INFLUENCE,
     ACTION_PUBLISH_NARRATIVE,
+    ACTION_DIMINISH_COMPETITOR,
     ACTION_LOBBY_INSTITUTION,
 }
 
@@ -66,6 +69,10 @@ INFLUENCE_BUILD_COST = 3.0
 
 # Cost of publish_narrative (influence spent)
 NARRATIVE_INFLUENCE_COST = 5
+
+# Cost of diminish_competitor (per influence point removed from target)
+DIMINISH_CAPITAL_COST_PER_POINT   = 2.0
+DIMINISH_INFLUENCE_COST_PER_POINT = 1.0
 
 # Cost of lobby_institution
 LOBBY_CAPITAL_COST   = 8.0
@@ -153,6 +160,26 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
             return (f"publish_narrative value_delta {value_delta} exceeds "
                     f"±{MAX_VALUE_OVERRIDE_PER_TURN} limit")
 
+    elif action_type == ACTION_DIMINISH_COMPETITOR:
+        if amount <= 0:
+            return "diminish_competitor requires amount > 0"
+        target_name = action.get("target")
+        if not target_name:
+            return "diminish_competitor requires a target actor name"
+        target = next((a for a in all_micro_agents if a.name == target_name), None)
+        if target is None:
+            return f"diminish_competitor target {target_name!r} not found"
+        if target.name == actor.name:
+            return "diminish_competitor cannot target self"
+        capital_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
+        influence_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
+        if actor.capital < max(MIN_ACTION_COST, capital_cost):
+            return (f"Insufficient capital ({actor.capital:.1f}) to diminish "
+                    f"{amount:.1f} influence (cost {capital_cost:.1f})")
+        if actor.influence < max(MIN_ACTION_COST, influence_cost):
+            return (f"Insufficient influence ({actor.influence:.1f}) to diminish "
+                    f"{amount:.1f} influence (cost {influence_cost:.1f})")
+
     elif action_type == ACTION_LOBBY_INSTITUTION:
         total_cost_k = max(MIN_ACTION_COST, LOBBY_CAPITAL_COST)
         total_cost_i = max(MIN_ACTION_COST, LOBBY_INFLUENCE_COST)
@@ -232,6 +259,28 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
             logger.info(
                 f"    {actor.name}: publish_narrative → {target_name}.{value_axis} "
                 f"{old}→{target.values[value_axis]}"
+            )
+
+    elif action_type == ACTION_DIMINISH_COMPETITOR:
+        target_name = action.get("target", "")
+        target = next((a for a in all_micro_agents if a.name == target_name), None)
+        capital_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
+        influence_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
+        actor.capital   -= capital_cost
+        actor.influence -= influence_cost
+        if target:
+            old_influence = target.influence
+            target.influence = max(0.0, target.influence - amount)
+            actual_delta = round(target.influence - old_influence, 2)
+            result["effects"] = {
+                "capital":               -capital_cost,
+                "influence_spent":       -influence_cost,
+                "target":                target_name,
+                "target_influence_delta": actual_delta,
+            }
+            logger.info(
+                f"    {actor.name}: diminish_competitor → {target_name} "
+                f"influence {old_influence:.1f}→{target.influence:.1f}"
             )
 
     elif action_type == ACTION_LOBBY_INSTITUTION:

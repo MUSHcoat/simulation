@@ -19,7 +19,7 @@ from typing import Any, Dict, List
 # ---------------------------------------------------------------------------
 
 VALUE_DEFAULTS: Dict[str, int] = {
-    "time_horizon": 50,           # 0=short-term, 100=century-long planning
+    "time_horizon": 50,           # 0=short-term, 100=~50 years ahead planning
     "transparency_threshold": 50, # 0=deceptive, 100=fully honest
     "risk_tolerance": 50,         # 0=risk-averse, 100=risk-seeking
     "democratic_tendency": 50,    # 0=hoards power, 100=distributes wealth/power

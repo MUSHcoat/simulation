@@ -156,7 +156,7 @@ SECTIONS = [
                         "discretized integers on [0, 100]:"
                     ),
                     (
-                        "time_horizon: 0 = short-term optimization; 100 = century-long "
+                        "time_horizon: 0 = short-term optimization; 100 = ~50 years ahead "
                         "planning. High values correlate with safety-oriented, patient "
                         "strategies."
                     ),

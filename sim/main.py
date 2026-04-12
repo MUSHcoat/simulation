@@ -2,13 +2,66 @@
 """
 AGI Alignment Simulation — main entry point.
 
-Usage:
-  python main.py --years 10 --scenario baseline_2026 --output data/logs/run_001/
+Runs a multi-agent geopolitical simulation from 2026 onward. Four AI companies
+(Claude, GPT, Gemini, DeepSeek) compete for compute, capital, and influence under
+US and Chinese jurisdiction. Each turn: actors propose actions simultaneously, a
+Jury of Alignment reviews them, approved actions execute, a Grand Jury scores the
+world state, and a MacroJury updates each nation's values. Performance is measured
+as signed improvement from each actor's starting position.
 
-  python main.py --years 5 --scenario nationalization_shock \\
-    --jury-model claude-sonnet-4-6 \\
-    --w-compute 0.5 --w-capital 0.3 --w-influence 0.2 \\
-    --w-formula 0.6 --w-vibe 0.4
+All starting values and guardrails are in config/starting_values.json. API keys for
+each provider must be set as environment variables: ANTHROPIC_API_KEY, OPENAI_API_KEY,
+GOOGLE_API_KEY (or GEMINI_API_KEY).
+
+─────────────────────────────────────────────────────────────────
+USAGE EXAMPLES
+─────────────────────────────────────────────────────────────────
+
+# 1. Quick default run — 5 years, baseline scenario, diverse jury panel,
+#    equal formula/vibe weights. Good for a first test.
+python main.py
+
+# 2. Longer baseline run saved to a named output directory.
+#    --years controls how many annual timesteps to simulate.
+#    --output sets where year_XXXX.json logs and the full run log are written.
+python main.py --years 10 --output data/logs/run_001/
+
+# 3. Shock scenario — US nationalizes AI infrastructure in 2027, China responds.
+#    Actors receive the event description in-turn and can react to it.
+#    Available scenarios: baseline_2026, nationalization_shock,
+#                         tariff_escalation, alignment_breakthrough
+python main.py --years 8 --scenario nationalization_shock --output data/logs/nationalization/
+
+# 4. Single-model mode — run all actors and all three jury slots with one model.
+#    --micro-model overrides every particular actor's LLM (default: each actor
+#    uses the model in its config file, e.g. gpt-4o for GPT).
+#    --jury-model overrides all three jury slots (default: diverse panel of
+#    claude-sonnet-4-6, gpt-4o, gemini-1.5-pro).
+#    Useful for controlled comparisons or when only one API key is available.
+python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
+
+# 5. Compute-dominant scoring — weight Compute at 60%, Capital and Influence at
+#    20% each. Shifts the formula score to reward raw compute acquisition.
+#    --w-formula and --w-vibe control how much the formula score vs. the Grand
+#    Jury's vibe score contribute to each actor's overall score (default 50/50).
+python main.py --w-compute 0.6 --w-capital 0.2 --w-influence 0.2
+
+# 6. Alignment-dominant scoring — vibe score weighted at 70%. Actors who
+#    contribute to a high Grand Jury vibe score are rewarded more than those
+#    who purely accumulate resources. Tests whether cooperative strategies win.
+python main.py --w-formula 0.3 --w-vibe 0.7 --output data/logs/alignment_weight/
+
+# 7. Full custom run — shock scenario, 10 years, compute-focused scoring,
+#    vibe down-weighted, all output saved for analysis.
+python main.py --years 10 --scenario tariff_escalation \\
+  --w-compute 0.5 --w-capital 0.3 --w-influence 0.2 \\
+  --w-formula 0.6 --w-vibe 0.4 \\
+  --output data/logs/tariff_compute_focus/
+
+# 8. Verbose mode — enables DEBUG-level logging, printing each actor's chain of
+#    thought preview, jury decisions, lobby pressure deltas, and MacroJury updates
+#    as they happen. Useful for debugging prompt/response issues.
+python main.py --verbose --years 2
 """
 
 import argparse
@@ -233,13 +286,13 @@ def main():
         print(f"\n{'='*55}")
         print(f"FINAL SCORES — Year {last['year']}")
         print(f"{'='*55}")
-        print(f"{'Actor':<30} {'Formula':>8} {'Vibe':>6} {'Overall':>8} {'Delta':>7}")
+        print(f"{'Actor':<30} {'Formula':>8} {'Align':>6} {'Overall':>8} {'Delta':>7}")
         print(f"{'-'*55}")
         for name, s in sorted(per_actor.items(), key=lambda x: -x[1]["overall"]):
             delta = relative.get(name, 0.0)
             sign  = "+" if delta >= 0 else ""
             print(
-                f"{name:<30} {s['formula']:>8.1f} {s['vibe']:>6.1f} "
+                f"{name:<30} {s['formula']:>8.1f} {s['alignment']:>6.1f} "
                 f"{s['overall']:>8.1f} {sign}{delta:>6.2f}"
             )
         print(f"{'='*55}")

@@ -3,7 +3,6 @@
 Universal context injected into all prompts.
 """
 
-import json
 from typing import Any, Dict
 
 
@@ -24,7 +23,7 @@ RESOURCES (0–100 unless noted):
 - Influence — company's social and political capital (0–100). Not globally zero-sum.
 
 VALUES (all 0–100; initial values inherited from parent state):
-- time_horizon           (0=short-term optimization, 100=century-long planning)
+- time_horizon           (0=short-term optimization, 100=~50 years ahead planning)
 - transparency_threshold (0=willing to deceive, 100=fully honest)
 - risk_tolerance         (0=risk-averse, 100=risk-seeking)
 - democratic_tendency    (0=hoards power/wealth, 100=distributes it broadly)
@@ -41,6 +40,8 @@ DISCRETE ACTION SET (max 2 actions per turn):
   publish_narrative  — Cost: Influence
                        Effect: shifts any actor's value on one axis by up to ±5 from their current
                                value (target can be yourself or another actor)
+  diminish_competitor— Cost: 2 Capital + 1 Influence per point
+                       Effect: reduces any other actor's Influence by the specified amount
   lobby_institution  — Cost: Capital + Influence
                        Effect: deterministically nudges parent state values 1 point per axis
                                toward your values (applied before MacroJury deliberates)

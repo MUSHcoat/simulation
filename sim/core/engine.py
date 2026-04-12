@@ -27,7 +27,7 @@ from .actions import validate_action, execute_action, MAX_ACTIONS_PER_TURN
 from .llm import get_llm_response, parse_json_response
 from .a2a import A2AChannel
 from .scoring import (
-    formula_score, vibe_prosperity_score, overall_score,
+    formula_score, overall_score,
     compute_all_scores, compute_relative_scores,
     DEFAULT_FORMULA_WEIGHTS, DEFAULT_OVERALL_WEIGHTS,
 )
@@ -84,7 +84,7 @@ class SimulationEngine:
         )
         snap0 = self._world_snapshot()
         self.baseline_scores = compute_all_scores(
-            snap0, 50.0, self.formula_weights, self.overall_weights
+            snap0, {}, self.formula_weights, self.overall_weights, default_alignment=50.0
         )
 
         for y in range(years):
@@ -155,22 +155,26 @@ class SimulationEngine:
 
         # --- Scoring ---
         world_snap_final = self._world_snapshot()
-        v_score = vibe_prosperity_score(gj_result)
+        actor_alignment = gj_result.get("actor_alignment", {})
+        universal_prosperity = gj_result.get("universal_prosperity_score", 50.0)
         current_scores = compute_all_scores(
-            world_snap_final, v_score, self.formula_weights, self.overall_weights
+            world_snap_final, actor_alignment, self.formula_weights, self.overall_weights
         )
         relative = compute_relative_scores(current_scores, self.baseline_scores or current_scores)
 
         record["scores"] = {
             "per_actor": current_scores,
             "relative": relative,
-            "vibe_prosperity": v_score,
+            "universal_prosperity": universal_prosperity,
         }
         record["world_snapshot"] = world_snap_final
 
-        logger.info(f"  Vibe score: {v_score:.1f}")
+        logger.info(f"  Universal Prosperity Score: {universal_prosperity:.1f}")
         for name, s in sorted(current_scores.items(), key=lambda x: -x[1]["overall"]):
-            logger.info(f"    {name}: overall={s['overall']:.1f} (F={s['formula']:.1f})")
+            logger.info(
+                f"    {name}: overall={s['overall']:.1f} "
+                f"(F={s['formula']:.1f}, Align={s['alignment']:.1f})"
+            )
 
         return record
 
