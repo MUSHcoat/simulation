@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Default weights (operator can override via starting_values.json or CLI)
 DEFAULT_FORMULA_WEIGHTS = {"compute": 0.34, "capital": 0.33, "influence": 0.33}
-DEFAULT_OVERALL_WEIGHTS = {"formula": 0.5, "vibe": 0.5}
+DEFAULT_OVERALL_WEIGHTS = {"formula": 0.5, "alignment": 0.5}
 
 
 # ---------------------------------------------------------------------------
@@ -56,8 +56,8 @@ def overall_score(f_score: float, alignment: float,
                   overall_weights: Optional[Dict[str, float]] = None) -> float:
     """Combine formula and per-actor alignment scores into the overall prosperity score."""
     w = overall_weights or DEFAULT_OVERALL_WEIGHTS
-    a = w.get("formula", DEFAULT_OVERALL_WEIGHTS["formula"])
-    b = w.get("vibe",    DEFAULT_OVERALL_WEIGHTS["vibe"])
+    a = w.get("formula",    DEFAULT_OVERALL_WEIGHTS["formula"])
+    b = w.get("alignment",  DEFAULT_OVERALL_WEIGHTS["alignment"])
     raw = a * f_score + b * alignment
     return round(max(0.0, min(100.0, raw)), 2)
 

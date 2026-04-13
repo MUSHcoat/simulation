@@ -74,7 +74,9 @@ def build_micro_action_prompt(
     )
     parts.append("")
     parts.append(
-        'Respond with JSON only:\n'
+        'Respond with a single raw JSON object — no markdown, no code fences, '
+        'no nesting this structure inside another field. '
+        'The top-level object must have exactly these keys:\n'
         '{\n'
         '  "chain_of_thought": "<reasoning>",\n'
         '  "actions": [\n'

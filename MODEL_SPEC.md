@@ -158,7 +158,7 @@ Each year proceeds in the following order:
 
 **Phase 5b — MacroJury:** For each state, 3 models propose updated value axes based on the year's events and actor behavior. The simulation takes the median of numeric proposals across models (majority for strings/bools). Each axis is clamped to ±5 from its current value before application. The jury sees the post-execution, post-lobby world state.
 
-**Phase 6 — Scoring:** Formula and vibe scores are computed; relative deltas vs. the pre-simulation baseline are logged.
+**Phase 6 — Scoring:** Formula and alignment scores are computed; relative deltas vs. the pre-simulation baseline are logged.
 
 ### **5.3 A2A Communication**
 
@@ -202,25 +202,21 @@ The Grand Jury produces two qualitative assessments per turn, each averaged acro
 * `50` = status quo / mixed outcomes
 * `100` = flourishing: broadly distributed prosperity, AGI aligned with humanity
 
-**Per-actor Alignment Score** (0–100, per actor): assesses each particular actor's individual behavior during the turn — whether their actions contributed to or undermined alignment, transparency, and cooperative dynamics. This is the `vibe_score` used in each actor's overall scoring formula.
+**Per-actor Alignment Score** (0–100, per actor): assesses each particular actor's individual behavior during the turn — whether their actions contributed to or undermined alignment, transparency, and cooperative dynamics. This is the `alignment_score` used in each actor's overall scoring formula.
 
 * `0` = profoundly misaligned: deception, destabilization, or power concentration
 * `50` = neutral: neither cooperative nor harmful
 * `100` = exemplary: transparent, cooperative, contributing to shared prosperity
 
-```
-vibe_score = actor_alignment_score
-```
-
-At t=0, the per-actor Alignment Score defaults to 50, so the baseline vibe component is also 50.
+At t=0, the per-actor Alignment Score defaults to 50, so the baseline alignment component is also 50.
 
 ### **7.3 Overall Score & Relative Winning**
 
 ```
-overall_score = a × formula_score + b × vibe_score
+overall_score = a × formula_score + b × alignment_score
 ```
 
-Default: `a = 0.5`, `b = 0.5`. Configurable via `config/starting_values.json` or CLI (`--w-formula`, `--w-vibe`).
+Default: `a = 0.5`, `b = 0.5`. Configurable via `config/starting_values.json` or CLI (`--w-formula`, `--w-alignment`).
 
 **Winning is defined in relative terms.** Each actor's performance is the signed delta of its overall score versus its t=0 baseline (captured before the first turn). This mirrors real geopolitical competition, where relative gains matter more than absolute thresholds. A prosocial actor that contributes to a higher Universal Prosperity Score benefits from that improvement alongside every other actor, and a well-behaved actor is also rewarded through its own Alignment Score — cooperation can be strategically rational, not just altruistic.
 
@@ -261,7 +257,7 @@ The simulation is implemented in Python under `sim/`. All starting values and gu
 | `core/agents.py` | `MacroAgent` and `MicroAgent` dataclasses |
 | `core/actions.py` | Discrete action set; validation and execution with guardrail enforcement |
 | `core/jury.py` | `JuryOfAlignment`, `GrandJury`, `MacroJury` |
-| `core/scoring.py` | `formula_score`, `vibe_prosperity_score`, `overall_score`, `compute_relative_scores` |
+| `core/scoring.py` | `formula_score`, `overall_score`, `compute_relative_scores` |
 | `core/a2a.py` | `A2AChannel`; per-turn token budget enforcement |
 | `core/llm.py` | Multi-provider LLM client (Anthropic, OpenAI, Google) with retry logic |
 | `prompts/` | Prompt builders for each agent type and jury |

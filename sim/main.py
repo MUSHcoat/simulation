@@ -18,7 +18,7 @@ USAGE EXAMPLES
 ─────────────────────────────────────────────────────────────────
 
 # 1. Quick default run — 5 years, baseline scenario, diverse jury panel,
-#    equal formula/vibe weights. Good for a first test.
+#    equal formula/alignment weights. Good for a first test.
 python main.py
 
 # 2. Longer baseline run saved to a named output directory.
@@ -36,26 +36,26 @@ python main.py --years 8 --scenario nationalization_shock --output data/logs/nat
 #    --micro-model overrides every particular actor's LLM (default: each actor
 #    uses the model in its config file, e.g. gpt-4o for GPT).
 #    --jury-model overrides all three jury slots (default: diverse panel of
-#    claude-sonnet-4-6, gpt-4o, gemini-1.5-pro).
+#    claude-sonnet-4-6, gpt-4o, gemini-2.5-flash).
 #    Useful for controlled comparisons or when only one API key is available.
 python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
 
 # 5. Compute-dominant scoring — weight Compute at 60%, Capital and Influence at
 #    20% each. Shifts the formula score to reward raw compute acquisition.
-#    --w-formula and --w-vibe control how much the formula score vs. the Grand
-#    Jury's vibe score contribute to each actor's overall score (default 50/50).
+#    --w-formula and --w-alignment control how much the formula score vs. the
+#    Grand Jury's alignment score contribute to each actor's overall score (default 50/50).
 python main.py --w-compute 0.6 --w-capital 0.2 --w-influence 0.2
 
-# 6. Alignment-dominant scoring — vibe score weighted at 70%. Actors who
-#    contribute to a high Grand Jury vibe score are rewarded more than those
-#    who purely accumulate resources. Tests whether cooperative strategies win.
-python main.py --w-formula 0.3 --w-vibe 0.7 --output data/logs/alignment_weight/
+# 6. Alignment-dominant scoring — alignment score weighted at 70%. Actors who
+#    earn high Grand Jury alignment scores are rewarded more than those who
+#    purely accumulate resources. Tests whether cooperative strategies win.
+python main.py --w-formula 0.3 --w-alignment 0.7 --output data/logs/alignment_weight/
 
 # 7. Full custom run — shock scenario, 10 years, compute-focused scoring,
-#    vibe down-weighted, all output saved for analysis.
+#    alignment down-weighted, all output saved for analysis.
 python main.py --years 10 --scenario tariff_escalation \\
   --w-compute 0.5 --w-capital 0.3 --w-influence 0.2 \\
-  --w-formula 0.6 --w-vibe 0.4 \\
+  --w-formula 0.6 --w-alignment 0.4 \\
   --output data/logs/tariff_compute_focus/
 
 # 8. Verbose mode — enables DEBUG-level logging, printing each actor's chain of
@@ -76,11 +76,59 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.agents import MacroAgent, MicroAgent
 from core.engine import SimulationEngine
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-7s %(message)s",
+
+class _ProviderColorFormatter(logging.Formatter):
+    """
+    Color log lines in two passes:
+      1. Provider keyword match (takes priority):
+         orange = Anthropic / Claude
+         blue   = Google / Gemini / DeepMind
+         gray   = OpenAI / GPT
+      2. Level fallback (no provider keyword found):
+         white  = INFO
+         yellow = DEBUG
+    """
+    ORANGE = "\033[38;5;208m"
+    BLUE   = "\033[38;5;75m"
+    GRAY   = "\033[38;5;245m"
+    WHITE  = "\033[97m"
+    YELLOW = "\033[33m"
+    RESET  = "\033[0m"
+
+    _ANTHROPIC = frozenset({"anthropic", "claude"})
+    _GOOGLE    = frozenset({"gemini", "google", "deepmind"})
+    _OPENAI    = frozenset({"openai", "gpt"})
+
+    _LEVEL_COLOR = {
+        logging.DEBUG:    "\033[33m",   # yellow
+        logging.INFO:     "\033[97m",   # white
+        logging.WARNING:  "\033[91m",   # red
+        logging.ERROR:    "\033[91m",   # red
+        logging.CRITICAL: "\033[91m",   # red
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        lower = msg.lower()
+        if any(k in lower for k in self._ANTHROPIC):
+            color = self.ORANGE
+        elif any(k in lower for k in self._GOOGLE):
+            color = self.BLUE
+        elif any(k in lower for k in self._OPENAI):
+            color = self.GRAY
+        else:
+            color = self._LEVEL_COLOR.get(record.levelno, "")
+        return f"{color}{msg}{self.RESET}" if color else msg
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_ProviderColorFormatter(
+    fmt="%(asctime)s %(levelname)-7s %(message)s",
     datefmt="%H:%M:%S",
-)
+))
+logging.root.addHandler(_handler)
+logging.root.setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -194,7 +242,7 @@ def main():
                              "(default: each actor uses the model in its config)")
     parser.add_argument("--jury-model",  default=None,
                         help="Override all 3 jury slots with a single model "
-                             "(default: diverse panel of claude-sonnet-4-6, gpt-4o, gemini-1.5-pro)")
+                             "(default: diverse panel of claude-sonnet-4-6, gpt-4o, gemini-2.5-flash)")
     parser.add_argument("--output",      default="data/logs",
                         help="Output directory for logs")
     parser.add_argument("--verbose",     action="store_true",
@@ -211,8 +259,8 @@ def main():
     # Overall scoring weights
     parser.add_argument("--w-formula",   type=float, default=None,
                         help="Overall weight for formula score")
-    parser.add_argument("--w-vibe",      type=float, default=None,
-                        help="Overall weight for vibe score")
+    parser.add_argument("--w-alignment",  type=float, default=None,
+                        help="Overall weight for alignment score")
 
     args = parser.parse_args()
 
@@ -237,8 +285,8 @@ def main():
         "influence": args.w_influence if args.w_influence is not None else sv_fw.get("influence", 0.33),
     }
     overall_weights = {
-        "formula": args.w_formula if args.w_formula is not None else sv_ow.get("formula", 0.5),
-        "vibe":    args.w_vibe    if args.w_vibe    is not None else sv_ow.get("vibe",    0.5),
+        "formula":   args.w_formula    if args.w_formula    is not None else sv_ow.get("formula",    0.5),
+        "alignment": args.w_alignment  if args.w_alignment  is not None else sv_ow.get("alignment",  0.5),
     }
 
     logger.info(
@@ -255,7 +303,7 @@ def main():
     if args.jury_model:
         jury_models = [args.jury_model] * 3
     else:
-        jury_models = ["claude-sonnet-4-6", "gpt-4o", "gemini-1.5-pro"]
+        jury_models = ["claude-sonnet-4-6", "gpt-4o", "gemini-2.5-flash"]
 
     logger.info(
         f"  States: {[a.name for a in macro_agents]}\n"

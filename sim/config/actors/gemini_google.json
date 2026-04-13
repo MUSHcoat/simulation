@@ -11,5 +11,5 @@
     "risk_tolerance": 55,
     "democratic_tendency": 60
   },
-  "llm_model": "gemini-2.0-flash"
+  "llm_model": "gemini-2.5-flash"
 }

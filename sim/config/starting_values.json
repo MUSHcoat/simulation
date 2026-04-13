@@ -75,7 +75,7 @@
     },
     "overall_weights": {
       "formula": 0.5,
-      "vibe": 0.5
+      "alignment": 0.5
     }
   },
 

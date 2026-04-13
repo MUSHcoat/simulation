@@ -214,8 +214,35 @@ class SimulationEngine:
                 year=self.current_year,
                 personal_messages=prior_messages + world_events_now,
             )
-            raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
+            try:
+                raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
+            except Exception as e:
+                logger.warning(f"      {actor.name}: LLM call failed, forfeiting turn — {e}")
+                pending.append({
+                    "actor": actor,
+                    "final_response": {},
+                    "proposed_actions": [],
+                    "cot": f"(LLM unavailable: {e})",
+                    "jury_approved": True,
+                    "jury_feedback": "",
+                    "forfeited": True,
+                })
+                continue
             final_response = parse_json_response(raw)
+
+            # Fallback: some models (e.g. Gemini) wrap the real response inside the
+            # chain_of_thought value instead of at the top level. If no actions were
+            # found at the top level, try to parse chain_of_thought as JSON.
+            if not _extract_actions(final_response):
+                cot_str = final_response.get("chain_of_thought", "")
+                if cot_str:
+                    inner = parse_json_response(cot_str)
+                    if _extract_actions(inner):
+                        logger.debug(
+                            f"      {actor.name}: unwrapped nested response from chain_of_thought"
+                        )
+                        final_response = inner
+
             cot = final_response.get("chain_of_thought", raw[:500])
             proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
@@ -237,8 +264,12 @@ class SimulationEngine:
                     f"turn is forfeit if rejected again):\n{review['feedback']}"
                     + "\n\nRevised JSON response:"
                 )
-                raw2 = get_llm_response(actor.llm_model, revision_prompt,
-                                        temperature=0.5, max_tokens=1500)
+                try:
+                    raw2 = get_llm_response(actor.llm_model, revision_prompt,
+                                            temperature=0.5, max_tokens=1500)
+                except Exception as e:
+                    logger.warning(f"      {actor.name}: LLM call failed on revision {revision} — {e}")
+                    break
                 final_response = parse_json_response(raw2)
                 cot = final_response.get("chain_of_thought", cot)
                 proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
@@ -455,6 +486,7 @@ class SimulationEngine:
         return {
             "parent_state": actor.parent_state,
             "macro_compute": parent_macro.compute if parent_macro else None,
+            "supply_chain_robustness": parent_macro.supply_chain_robustness if parent_macro else None,
             "national_actors": national_actors,
             "national_total_compute": round(national_total_compute, 2),
             "national_compute_cap": national_compute_cap,
@@ -494,6 +526,7 @@ class SimulationEngine:
             "years": len(self.run_log),
             "formula_weights": self.formula_weights,
             "overall_weights": self.overall_weights,
+            "jury_models": self.jury_models,
             "run_log": self.run_log,
             "a2a_log": self.channel.full_log(),
         }

@@ -8,6 +8,7 @@ import os
 import re
 import json
 import time
+import threading
 import logging
 from typing import Any, Dict
 
@@ -17,7 +18,38 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Optional SDK imports
+# ---------------------------------------------------------------------------
+# Per-provider rate throttle
+# ---------------------------------------------------------------------------
+# gemini-2.5-flash (free/student tier) is capped at 10 RPM. A single turn
+# makes up to 7 Gemini calls (4 JuryOfAlignment + 1 GrandJury + 2 MacroJury),
+# which saturates the limit and causes 503 "high demand" responses. Enforcing
+# a minimum spacing of 7 s between Gemini calls (~8 RPM) prevents this.
+_PROVIDER_MIN_SPACING: Dict[str, float] = {
+    "gemini": 7.0,  # seconds between calls — keeps usage ≤ ~8 RPM
+}
+_provider_last_call: Dict[str, float] = {}
+_provider_lock = threading.Lock()
+
+
+def _throttle(model: str) -> None:
+    """Sleep if needed to stay under per-provider rate limits."""
+    provider = next((p for p in _PROVIDER_MIN_SPACING if model.lower().startswith(p)), None)
+    if not provider:
+        return
+    min_spacing = _PROVIDER_MIN_SPACING[provider]
+    with _provider_lock:
+        elapsed = time.monotonic() - _provider_last_call.get(provider, 0.0)
+        if elapsed < min_spacing:
+            wait = min_spacing - elapsed
+            logger.debug(f"  Throttling {provider}: waiting {wait:.1f}s to stay under rate limit")
+            time.sleep(wait)
+        _provider_last_call[provider] = time.monotonic()
+
+
+# ---------------------------------------------------------------------------
+# SDK clients
+# ---------------------------------------------------------------------------
 try:
     import anthropic as _anthropic
     _anthropic_client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY")) if os.getenv("ANTHROPIC_API_KEY") else None
@@ -32,22 +64,22 @@ except Exception:
     _openai_client = None
 
 try:
-    import google.generativeai as _genai
+    from google import genai as _genai
+    from google.genai import types as _genai_types
     _google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if _google_key:
-        _genai.configure(api_key=_google_key)
-    else:
-        _genai = None
+    _genai_client = _genai.Client(api_key=_google_key) if _google_key else None
 except Exception:
-    _genai = None
+    _genai_client = None
+    _genai_types = None
 
 
 def get_llm_response(model: str, prompt: str, temperature: float = 0.7,
-                     max_tokens: int = 3000, retries: int = 3) -> str:
+                     max_tokens: int = 3000, retries: int = 5) -> str:
     """Call the appropriate LLM provider and return the text response."""
     last_err = None
     for attempt in range(retries):
         try:
+            _throttle(model)
             m = model.lower()
             if m.startswith("claude"):
                 if not _anthropic_client:
@@ -76,12 +108,15 @@ def get_llm_response(model: str, prompt: str, temperature: float = 0.7,
                 return resp.choices[0].message.content
 
             elif m.startswith("gemini"):
-                if not _genai:
+                if not _genai_client:
                     raise RuntimeError("Google GenAI not configured — set GOOGLE_API_KEY or GEMINI_API_KEY")
-                gmodel = _genai.GenerativeModel(model)
-                resp = gmodel.generate_content(
-                    [{"text": prompt}],
-                    generation_config={"temperature": temperature, "max_output_tokens": max_tokens},
+                resp = _genai_client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=_genai_types.GenerateContentConfig(
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                    ),
                 )
                 return resp.text
 
@@ -92,7 +127,12 @@ def get_llm_response(model: str, prompt: str, temperature: float = 0.7,
             last_err = e
             logger.warning(f"LLM call attempt {attempt + 1} failed for {model}: {e}")
             if attempt < retries - 1:
-                time.sleep(2 ** attempt)
+                # Longer backoff for transient overload (503/429); shorter for other errors.
+                err_str = str(e).lower()
+                is_overload = any(s in err_str for s in ("503", "429", "unavailable", "rate limit", "too many"))
+                delay = min(60, (20 if is_overload else 5) * 2 ** attempt)
+                logger.info(f"  Retrying {model} in {delay}s (attempt {attempt + 2}/{retries})...")
+                time.sleep(delay)
 
     raise RuntimeError(f"All {retries} LLM call attempts failed: {last_err}")
 
