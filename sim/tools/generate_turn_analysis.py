@@ -328,10 +328,15 @@ def sec_phase2(actor_phase, jury_models=None):
     for entry in actor_phase:
         actor = entry["actor"]
         approved = entry.get("jury_approved", True)
+        forfeited = entry.get("forfeited", False)
         blocked = entry.get("blocked_actions", [])
         proposed = entry.get("proposed_actions", [])
         check = "✓" if approved else "✗"
-        if not proposed:
+        if forfeited and not approved:
+            note = "Forfeited — jury rejected (empty or invalid action list after revisions)"
+        elif forfeited and approved:
+            note = "Forfeited — LLM unavailable, turn skipped"
+        elif not proposed:
             note = "No actions proposed — approved vacuously (0 actions is valid)"
         elif blocked:
             note = f"Approved; {len(blocked)} action(s) later blocked at execution time"
