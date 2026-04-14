@@ -24,10 +24,12 @@ Create `sim/.env` with keys for the providers you intend to use:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=AIza...
+VERTEX_API_KEY=...
 ```
 
 All three keys are needed for a default run. If a key is absent, that provider's models will raise a `RuntimeError` when called. Use `--micro-model` and `--jury-model` to restrict the run to a single provider.
+
+**Google / Vertex AI auth**: Google calls use Vertex AI Express Mode via the unified `google-genai` SDK — authentication is handled by `VERTEX_API_KEY` alone, with no need for `gcloud auth` or a service account. Obtain the key from the Google Cloud console with the Vertex AI API enabled.
 
 ---
 
@@ -48,8 +50,8 @@ python main.py --years 5 --scenario alignment_breakthrough --output data/logs/ru
 # Single-provider run (Anthropic only — no OpenAI or Google key needed)
 python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
 
-# Alignment-weighted scoring: vibe score counts 70%
-python main.py --w-formula 0.3 --w-vibe 0.7
+# Alignment-weighted scoring: alignment score counts 70%
+python main.py --w-formula 0.3 --w-alignment 0.7
 ```
 
 ### Key flags
@@ -63,7 +65,7 @@ python main.py --w-formula 0.3 --w-vibe 0.7
 | `--output PATH` | `data/logs` | Directory for log output |
 | `--verbose` | off | Enable DEBUG-level logging |
 | `--w-compute`, `--w-capital`, `--w-influence` | 0.34 / 0.33 / 0.33 | Formula score weights |
-| `--w-formula`, `--w-vibe` | 0.5 / 0.5 | Overall score blend |
+| `--w-formula`, `--w-alignment` | 0.5 / 0.5 | Overall score blend |
 
 Available scenarios: `baseline_2026`, `nationalization_shock`, `tariff_escalation`, `alignment_breakthrough`. Custom scenarios can be added to `config/scenarios.json`.
 
@@ -159,17 +161,3 @@ sim/
 │   └── grand_jury.py         # Grand Jury prompt builder
 └── data/logs/                # Run output (gitignored)
 ```
-
----
-
-## Cost Estimates
-
-Costs scale linearly with years. A single-year run with the default diverse panel costs roughly:
-
-| Config | Est. cost |
-|--------|-----------|
-| Default (Sonnet 4.6 + gpt-4o + gemini-2.5-flash) | ~$0.20–0.25 |
-| All-Claude (Sonnet 4.6) | ~$0.10 |
-| Budget (Haiku 4.5 + gpt-4o-mini + gemini-2.5-flash) | ~$0.03 |
-
-A 5-year run is 5× these figures. Google's Gemini free tier (15 RPM) covers the Gemini actor; the jury slot using `gemini-2.5-flash` may require billing enabled depending on request volume.

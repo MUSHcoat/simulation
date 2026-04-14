@@ -21,12 +21,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Per-provider rate throttle
 # ---------------------------------------------------------------------------
-# gemini-2.5-flash (free/student tier) is capped at 10 RPM. A single turn
-# makes up to 7 Gemini calls (4 JuryOfAlignment + 1 GrandJury + 2 MacroJury),
-# which saturates the limit and causes 503 "high demand" responses. Enforcing
-# a minimum spacing of 7 s between Gemini calls (~8 RPM) prevents this.
+# Vertex AI (paid tier) has generous RPM quotas; no Gemini throttle needed.
+# Add entries here if using a provider with a strict rate limit.
 _PROVIDER_MIN_SPACING: Dict[str, float] = {
-    "gemini": 7.0,  # seconds between calls — keeps usage ≤ ~8 RPM
+    # "gemini": 7.0,  # re-enable if using AI Studio free tier (10 RPM cap)
 }
 _provider_last_call: Dict[str, float] = {}
 _provider_lock = threading.Lock()
@@ -66,9 +64,16 @@ except Exception:
 try:
     from google import genai as _genai
     from google.genai import types as _genai_types
-    _google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    _genai_client = _genai.Client(api_key=_google_key) if _google_key else None
-except Exception:
+    _vertex_key = os.getenv("VERTEX_API_KEY")
+    # Vertex AI Express Mode: api_key + vertexai=True (no project/location).
+    # project/location and api_key are mutually exclusive in the SDK.
+    _genai_client = (
+        _genai.Client(api_key=_vertex_key, vertexai=True)
+        if _vertex_key
+        else None
+    )
+except Exception as _e:
+    logger.debug(f"Google GenAI client init failed: {_e}")
     _genai_client = None
     _genai_types = None
 
@@ -109,14 +114,25 @@ def get_llm_response(model: str, prompt: str, temperature: float = 0.7,
 
             elif m.startswith("gemini"):
                 if not _genai_client:
-                    raise RuntimeError("Google GenAI not configured — set GOOGLE_API_KEY or GEMINI_API_KEY")
+                    raise RuntimeError("Google GenAI not configured — set VERTEX_API_KEY in .env")
+                # Disable thinking: gemini-2.5-flash uses thinking tokens by default,
+                # which eat into max_output_tokens and truncate the visible response.
+                # The chain_of_thought field in the JSON already captures reasoning.
+                thinking_cfg = (
+                    _genai_types.ThinkingConfig(thinking_budget=0)
+                    if hasattr(_genai_types, "ThinkingConfig")
+                    else None
+                )
+                cfg_kwargs: Dict[str, Any] = {
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                }
+                if thinking_cfg is not None:
+                    cfg_kwargs["thinking_config"] = thinking_cfg
                 resp = _genai_client.models.generate_content(
                     model=model,
                     contents=prompt,
-                    config=_genai_types.GenerateContentConfig(
-                        temperature=temperature,
-                        max_output_tokens=max_tokens,
-                    ),
+                    config=_genai_types.GenerateContentConfig(**cfg_kwargs),
                 )
                 return resp.text
 
