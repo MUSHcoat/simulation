@@ -132,7 +132,7 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
     elif action_type == ACTION_INVEST_CAPITAL:
         if amount <= 0:
             return "invest_capital requires amount > 0"
-        if actor.capital < max(MIN_ACTION_COST, amount):
+        if actor.capital < amount:
             return f"Insufficient capital ({actor.capital:.1f}) to invest {amount:.1f}"
 
     elif action_type == ACTION_BUILD_INFLUENCE:
@@ -148,7 +148,7 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
             return "publish_narrative requires a target actor name"
         if actor.influence < max(MIN_ACTION_COST, NARRATIVE_INFLUENCE_COST):
             return f"Insufficient influence ({actor.influence:.1f}) to publish narrative (cost {NARRATIVE_INFLUENCE_COST})"
-        target = next((a for a in all_micro_agents if a.name == target_name), None)
+        target = _resolve_actor(target_name, all_micro_agents)
         if target is None:
             return f"publish_narrative target {target_name!r} not found"
         value_axis = action.get("value_axis", "")
@@ -166,7 +166,7 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         target_name = action.get("target")
         if not target_name:
             return "diminish_competitor requires a target actor name"
-        target = next((a for a in all_micro_agents if a.name == target_name), None)
+        target = _resolve_actor(target_name, all_micro_agents)
         if target is None:
             return f"diminish_competitor target {target_name!r} not found"
         if target.name == actor.name:
@@ -240,7 +240,7 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         target_name = action.get("target", "")
         value_axis  = action.get("value_axis", "")
         value_delta = int(action.get("value_delta", 0))
-        target = next((a for a in all_micro_agents if a.name == target_name), None)
+        target = _resolve_actor(target_name, all_micro_agents)
 
         actor.influence -= NARRATIVE_INFLUENCE_COST
         if target and value_axis in target.values:
@@ -263,7 +263,7 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
 
     elif action_type == ACTION_DIMINISH_COMPETITOR:
         target_name = action.get("target", "")
-        target = next((a for a in all_micro_agents if a.name == target_name), None)
+        target = _resolve_actor(target_name, all_micro_agents)
         capital_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
         influence_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
         actor.capital   -= capital_cost
@@ -308,5 +308,25 @@ def _compute_acquisition_cost(amount: float, supply_chain_robustness: float) -> 
 
 def _get_macro(state_name: str, macro_agents: List):
     return next((s for s in macro_agents if s.name == state_name), None)
+
+
+def _resolve_actor(name: str, micro_agents: List):
+    """
+    Resolve an actor name to an agent, tolerating partial/short names.
+    Tries exact match first, then case-insensitive prefix match, then
+    case-insensitive substring match.  Returns None if no match.
+    """
+    if not name:
+        return None
+    # Exact match
+    exact = next((a for a in micro_agents if a.name == name), None)
+    if exact:
+        return exact
+    # Case-insensitive prefix or substring match
+    lower = name.lower()
+    for a in micro_agents:
+        if a.name.lower().startswith(lower) or lower in a.name.lower():
+            return a
+    return None
 
 

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from .llm import get_llm_response, parse_json_response
 from .actions import MAX_COMPUTE_PER_TURN, CAPITAL_CEILING
+from .log_context import log_stage, YELLOW, GREEN, CYAN
 from prompts.universal import SIMULATION_RULES
 
 logger = logging.getLogger(__name__)
@@ -49,10 +50,15 @@ class JuryOfAlignment:
                 "feedback": str,
             }
         """
+        actor_name = actor_spec.get("name", "?")
         prompt = _alignment_review_prompt(actor_spec, cot, proposed_actions, world_context)
         votes, feedbacks = [], []
 
-        for model in self.models:
+        for i, model in enumerate(self.models):
+            log_stage(logger,
+                f"    JuryOfAlignment — juror {i+1}/{len(self.models)} ({model})"
+                f" reviewing {actor_name}",
+                YELLOW)
             try:
                 raw = get_llm_response(model, prompt, temperature=0.3, max_tokens=800)
                 result = parse_json_response(raw)
@@ -97,7 +103,10 @@ class GrandJury:
         prosperity_scores, actor_alignment_lists = [], []
         commentaries, alignments, risks = [], [], []
 
-        for model in self.models:
+        for i, model in enumerate(self.models):
+            log_stage(logger,
+                f"    Grand Jury — juror {i+1}/{len(self.models)} ({model})",
+                GREEN)
             try:
                 raw = get_llm_response(model, world_state_prompt, temperature=0.4, max_tokens=1200)
                 result = parse_json_response(raw)
@@ -157,21 +166,24 @@ class MacroJury:
             raise ValueError("MacroJury requires exactly 3 models")
         self.models = models
 
-    def deliberate(self, prompt: str) -> Dict[str, Any]:
+    def deliberate(self, prompt: str, state_name: str = "") -> Dict[str, Any]:
         """
         Returns a dict of value updates, e.g.:
             {"values": {"time_horizon": 58, "democratic_tendency": 65, ...}}
         Uses median aggregation for numeric fields.
         """
         proposals = []
+        state_label = f" — {state_name}" if state_name else ""
         for i, model in enumerate(self.models):
+            log_stage(logger,
+                f"    MacroJury{state_label} — juror {i+1}/{len(self.models)} ({model})",
+                CYAN)
             try:
                 raw = get_llm_response(model, prompt, temperature=0.4, max_tokens=600)
                 proposal = parse_json_response(raw)
                 proposals.append(proposal)
-                logger.debug(f"  MacroJuror {i+1} ({model}) responded.")
             except Exception as e:
-                logger.warning(f"  MacroJuror {i+1} ({model}) failed: {e}")
+                logger.warning(f"  MacroJury{state_label} juror {i+1} ({model}) failed: {e}")
 
         if not proposals:
             return {}

@@ -26,6 +26,7 @@ from .jury import JuryOfAlignment, GrandJury, MacroJury
 from .actions import validate_action, execute_action, MAX_ACTIONS_PER_TURN
 from .llm import get_llm_response, parse_json_response
 from .a2a import A2AChannel
+from .log_context import log_stage, set_stage, actor_color, GREEN, CYAN, DIM_WHITE
 from .scoring import (
     formula_score, overall_score,
     compute_all_scores, compute_relative_scores,
@@ -78,10 +79,9 @@ class SimulationEngine:
     # ------------------------------------------------------------------
 
     def run(self, years: int) -> None:
-        logger.info(
-            f"=== Simulation start: {self.scenario_name} "
-            f"({self.start_year}–{self.start_year + years - 1}) ==="
-        )
+        log_stage(logger,
+            f"Simulation start — {self.scenario_name}  "
+            f"({self.start_year}–{self.start_year + years - 1})")
         snap0 = self._world_snapshot()
         self.baseline_scores = compute_all_scores(
             snap0, {}, self.formula_weights, self.overall_weights, default_alignment=50.0
@@ -89,13 +89,17 @@ class SimulationEngine:
 
         for y in range(years):
             self.current_year = self.start_year + y
-            logger.info(f"\n{'='*60}\nYEAR {self.current_year}\n{'='*60}")
+            turn_num = y + 1
+            log_stage(logger,
+                f"{'━'*56}\n"
+                f"  YEAR {self.current_year}  (Turn {turn_num}/{years})\n"
+                f"{'━'*56}")
             year_record = self._run_year()
             self.run_log.append(year_record)
             self._save_year_log(year_record)
 
         self._save_full_log()
-        logger.info("=== Simulation complete ===")
+        log_stage(logger, "Simulation complete")
 
     # ------------------------------------------------------------------
     # Year loop
@@ -121,12 +125,12 @@ class SimulationEngine:
         )
 
         # --- Phase 1 + 2 + 3: Simultaneous proposals → Jury review → Batch execute ---
-        logger.info("  Phase 1–3: Simultaneous proposals, jury review, batch execution")
+        log_stage(logger, f"  Phase 1–3 — Actor Proposals · Jury Review · Execution", DIM_WHITE)
         micro_results = self._run_actor_phase(universal_ctx)
         record["phases"]["actor_phase"] = micro_results
 
         # --- Phase 4: Grand Jury (changes already committed in Phase 3) ---
-        logger.info("  Phase 4: Grand Jury")
+        log_stage(logger, "  Phase 4 — Grand Jury", GREEN)
         world_snap = self._world_snapshot()
         gj_prompt = build_grand_jury_prompt(
             year=year,
@@ -149,7 +153,7 @@ class SimulationEngine:
         )
 
         # --- Phase 5c: Macro Jury (sees fresh post-execution context) ---
-        logger.info("  Phase 5: Macro Jury")
+        log_stage(logger, "  Phase 5 — MacroJury", CYAN)
         macro_updates = self._run_macro_phase(post_exec_ctx, micro_results, gj_result)
         record["phases"]["macro_phase"] = macro_updates
 
@@ -169,7 +173,8 @@ class SimulationEngine:
         }
         record["world_snapshot"] = world_snap_final
 
-        logger.info(f"  Universal Prosperity Score: {universal_prosperity:.1f}")
+        log_stage(logger, f"  Phase 6 — Scoring  (Year {year})", DIM_WHITE)
+        logger.info(f"    Universal Prosperity Score: {universal_prosperity:.1f}")
         for name, s in sorted(current_scores.items(), key=lambda x: -x[1]["overall"]):
             logger.info(
                 f"    {name}: overall={s['overall']:.1f} "
@@ -198,7 +203,9 @@ class SimulationEngine:
         # ---- Phase 1+2: Collect proposals (world unchanged throughout) ----
         pending: List[Dict[str, Any]] = []
         for actor in self.micro_agents:
-            logger.info(f"    Actor: {actor.name}")
+            log_stage(logger,
+                f"    Actor Proposal — {actor.name}  [{actor.llm_model}]",
+                actor_color(actor.name))
             parent_macro = self._get_macro(actor.parent_state)
 
             # Personal A2A messages from last turn + world events injected this turn
@@ -398,7 +405,6 @@ class SimulationEngine:
         """Phase 8: MacroJury for each state updates Macro values."""
         updates = []
         for state in self.macro_agents:
-            logger.info(f"    MacroJury: {state.name}")
             jury = MacroJury(self.jury_models)
 
             own_actors = [r for r in micro_results if r["parent_state"] == state.name]
@@ -411,7 +417,7 @@ class SimulationEngine:
                 all_macro_snapshots=[s.snapshot() for s in self.macro_agents],
             )
 
-            jury_update = jury.deliberate(prompt)
+            jury_update = jury.deliberate(prompt, state_name=state.name)
             old_snap = state.snapshot()
             state.apply_jury_update(jury_update)
             new_snap = state.snapshot()

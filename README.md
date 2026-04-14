@@ -112,25 +112,39 @@ Claude (Anthropic)                32.1   81.0    56.55   +10.2
 
 ## Terminal Color Coding
 
-Verbose output (`--verbose`) produces colored log lines. Colors are assigned in two passes:
+Log lines are colored by simulation stage. The stage is set proactively before each LLM call — there is no keyword scanning.
 
-**Pass 1 — API provider** (takes priority over level color):
+**Stage headers** (bold bright white — every phase transition):
 
-| Color | Provider | Triggered by keywords |
-|-------|----------|-----------------------|
-| Orange | Anthropic | `claude`, `anthropic` |
-| Blue | Google | `gemini`, `google`, `deepmind` |
-| Gray | OpenAI | `openai`, `gpt` |
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  YEAR 2026  (Turn 1/5)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Phase 1-3 — Actor Proposals · Jury Review · Execution
+    Actor Proposal — Claude (Anthropic)  [claude-sonnet-4-6]
+    JuryOfAlignment — juror 1/3 (claude-sonnet-4-6) reviewing Claude (Anthropic)
+    ...
+  Phase 4 — Grand Jury
+    Grand Jury — juror 2/3 (gpt-4o)
+  Phase 5 — MacroJury
+    MacroJury — United States — juror 1/3 (claude-sonnet-4-6)
+  Phase 6 — Scoring  (Year 2026)
+```
 
-**Pass 2 — Log level** (applies when no provider keyword is found):
+**Stage body colors** (lines that follow each header):
 
-| Color | Level | Typical content |
-|-------|-------|-----------------|
-| White | INFO | Turn headers, phase banners, scores, lobby deltas, retry notices |
-| Yellow | DEBUG | HTTP lifecycle events, raw request/response details |
-| Red | WARNING / ERROR / CRITICAL | Failed LLM calls, blocked actions, parse errors |
-
-In practice: a DEBUG line about a Gemini HTTP call appears **blue** (provider wins); a DEBUG line about an HTTP close event with no provider keyword appears **yellow** (level fallback). Errors always appear **red** regardless of content.
+| Color | Stage |
+|-------|-------|
+| Bold bright white | Stage headers (all phase transitions) |
+| Orange | Claude / Anthropic actor |
+| Blue | Gemini / Google actor |
+| Gray | GPT / OpenAI actor |
+| Magenta | DeepSeek actor |
+| Yellow | JuryOfAlignment juror calls |
+| Green | Grand Jury juror calls |
+| Cyan | MacroJury juror calls |
+| Red | WARNING / ERROR / CRITICAL (always, overrides stage color) |
+| Yellow (dim) | DEBUG lines with no active stage |
 
 ---
 

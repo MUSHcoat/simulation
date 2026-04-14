@@ -75,54 +75,45 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.agents import MacroAgent, MicroAgent
 from core.engine import SimulationEngine
+from core import log_context
 
 
-class _ProviderColorFormatter(logging.Formatter):
+class _StageColorFormatter(logging.Formatter):
     """
-    Color log lines in two passes:
-      1. Provider keyword match (takes priority):
-         orange = Anthropic / Claude
-         blue   = Google / Gemini / DeepMind
-         gray   = OpenAI / GPT
-      2. Level fallback (no provider keyword found):
-         white  = INFO
-         yellow = DEBUG
+    Colors log lines by simulation stage rather than by keyword matching.
+
+    Stage context is set proactively by engine.py and jury.py via
+    core.log_context.log_stage() before each LLM call or phase transition.
+
+    Priority:
+      1. WARNING / ERROR / CRITICAL  → always red
+      2. stage_header extra flag     → bold bright white (phase banners)
+      3. active stage color          → set by log_stage() on current thread
+      4. DEBUG fallback              → dim yellow
+      5. INFO fallback               → dim white
     """
-    ORANGE = "\033[38;5;208m"
-    BLUE   = "\033[38;5;75m"
-    GRAY   = "\033[38;5;245m"
-    WHITE  = "\033[97m"
-    YELLOW = "\033[33m"
-    RESET  = "\033[0m"
-
-    _ANTHROPIC = frozenset({"anthropic", "claude"})
-    _GOOGLE    = frozenset({"gemini", "google", "deepmind"})
-    _OPENAI    = frozenset({"openai", "gpt"})
-
-    _LEVEL_COLOR = {
-        logging.DEBUG:    "\033[33m",   # yellow
-        logging.INFO:     "\033[97m",   # white
-        logging.WARNING:  "\033[91m",   # red
-        logging.ERROR:    "\033[91m",   # red
-        logging.CRITICAL: "\033[91m",   # red
-    }
+    BRIGHT_WHITE = "\033[1;97m"
+    RED          = "\033[91m"
+    YELLOW_DBG   = "\033[33m"
+    DIM_WHITE    = "\033[97m"
+    RESET        = "\033[0m"
 
     def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
-        lower = msg.lower()
-        if any(k in lower for k in self._ANTHROPIC):
-            color = self.ORANGE
-        elif any(k in lower for k in self._GOOGLE):
-            color = self.BLUE
-        elif any(k in lower for k in self._OPENAI):
-            color = self.GRAY
-        else:
-            color = self._LEVEL_COLOR.get(record.levelno, "")
-        return f"{color}{msg}{self.RESET}" if color else msg
+        if record.levelno >= logging.WARNING:
+            return f"{self.RED}{msg}{self.RESET}"
+        if record.__dict__.get("stage_header"):
+            return f"{self.BRIGHT_WHITE}{msg}{self.RESET}"
+        color = log_context.get_stage_color()
+        if color:
+            return f"{color}{msg}{self.RESET}"
+        if record.levelno == logging.DEBUG:
+            return f"{self.YELLOW_DBG}{msg}{self.RESET}"
+        return f"{self.DIM_WHITE}{msg}{self.RESET}"
 
 
 _handler = logging.StreamHandler()
-_handler.setFormatter(_ProviderColorFormatter(
+_handler.setFormatter(_StageColorFormatter(
     fmt="%(asctime)s %(levelname)-7s %(message)s",
     datefmt="%H:%M:%S",
 ))

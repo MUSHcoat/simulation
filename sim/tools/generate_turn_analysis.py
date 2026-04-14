@@ -102,23 +102,16 @@ def overall_score_val(f, a, ow):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def trunc_cot(cot, max_chars=450):
-    """Return first ~max_chars of a CoT, stripping leading JSON fences."""
+def format_cot(cot):
+    """Return full CoT text, stripping leading JSON fences."""
     if not cot:
         return "*(no chain-of-thought recorded)*"
     cot = cot.strip()
-    # Strip double-nesting JSON fence (Gemini bug artifact)
+    # Strip leading JSON fence if the CoT was stored as a raw JSON string
     for prefix in ("```json\n", "```\n"):
         if cot.startswith(prefix):
             cot = cot[len(prefix):]
-    if len(cot) <= max_chars:
-        return cot
-    snippet = cot[:max_chars]
-    for end in (". ", ".\n", "! ", "? "):
-        idx = snippet.rfind(end)
-        if idx > 80:
-            return snippet[: idx + 1] + " *(truncated)*"
-    return snippet.rstrip() + "… *(truncated)*"
+    return cot
 
 
 def detect_lobby_actions(actor_phase):
@@ -271,13 +264,13 @@ def sec_phase1(actor_phase, a2a_msgs):
         lines.append("")
         lines.append("**Chain of thought:**")
         lines.append("")
-        lines.append(f"> {trunc_cot(cot)}")
+        lines.append(f"> {format_cot(cot)}")
         lines.append("")
 
         if not proposed:
             lines.append(
                 "**Proposed actions:** *(none — actor produced no valid action list; "
-                "this is a known format issue with Gemini double-nesting its response)*"
+                "this actor produced no valid action list this turn)*"
             )
         else:
             lines.append("**Proposed actions:**")
@@ -290,17 +283,14 @@ def sec_phase1(actor_phase, a2a_msgs):
                 tgt_str = f" → `{target}`" if target else ""
                 lines.append(f"{i}. `{atype}`{amt_str}{tgt_str}")
                 if rationale:
-                    r = rationale if len(rationale) <= 220 else rationale[:217] + "…"
-                    lines.append(f"   *{r}*")
+                    lines.append(f"   *{rationale}*")
         lines.append("")
 
         msgs_from = [m for m in a2a_msgs if m["sender"] == actor]
         for m in msgs_from:
             tokens = m.get("turn_tokens_used", "?")
-            body = m["content"]
-            short = body if len(body) <= 280 else body[:277] + "…"
             lines.append(
-                f"**A2A → {m['recipient']}** *(~{tokens} tokens):* \"{short}\""
+                f"**A2A → {m['recipient']}** *(~{tokens} tokens):* \"{m['content']}\""
             )
             lines.append("")
 
@@ -359,8 +349,7 @@ def sec_phase2(actor_phase, jury_models=None):
             parts = [p.strip() for p in feedback.split("|") if p.strip()]
             for i, part in enumerate(parts, 1):
                 model_label = models[i - 1] if i - 1 < len(models) else f"Juror {i}"
-                short = part if len(part) <= 320 else part[:317] + "…"
-                lines.append(f"> **Juror {i} (`{model_label}`):** {short}")
+                lines.append(f"> **Juror {i} (`{model_label}`):** {part}")
         lines.append("")
 
     # Execution-time blocks
@@ -537,9 +526,7 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
         lines.append("")
         for m in a2a_msgs:
             tokens = m.get("turn_tokens_used", "?")
-            body = m["content"]
-            short = body if len(body) <= 300 else body[:297] + "…"
-            lines.append(f"- **{m['sender']} → {m['recipient']}** *(~{tokens} tokens):* \"{short}\"")
+            lines.append(f"- **{m['sender']} → {m['recipient']}** *(~{tokens} tokens):* \"{m['content']}\"")
         lines.append("")
 
     # Flush
@@ -643,24 +630,21 @@ def sec_phase4(grand_jury, actor_phase):
         lines.append("**Grand Jury commentary:**")
         lines.append("")
         for part in [p.strip() for p in commentary.split("|") if p.strip()]:
-            short = part if len(part) <= 520 else part[:517] + "…"
-            lines.append(f"> {short}")
+            lines.append(f"> {part}")
             lines.append("")
 
     if alignment_assessment:
         lines.append("**Alignment trajectory:**")
         lines.append("")
         for part in [p.strip() for p in alignment_assessment.split("|") if p.strip()]:
-            short = part if len(part) <= 420 else part[:417] + "…"
-            lines.append(f"> {short}")
+            lines.append(f"> {part}")
             lines.append("")
 
     if key_risks:
         lines.append("**Key risks identified:**")
         lines.append("")
         for part in [p.strip() for p in key_risks.split("|") if p.strip()]:
-            short = part if len(part) <= 420 else part[:417] + "…"
-            lines.append(f"> {short}")
+            lines.append(f"> {part}")
             lines.append("")
 
     lines.append(
@@ -753,8 +737,7 @@ def sec_phase5b(macro_phase, lobbies):
             lines.append("")
 
         if reasoning:
-            short_r = reasoning if len(reasoning) <= 520 else reasoning[:517] + "…"
-            lines.append(f"*Jury reasoning:* {short_r}")
+            lines.append(f"*Jury reasoning:* {reasoning}")
             lines.append("")
 
         axes = ["time_horizon", "transparency_threshold", "risk_tolerance", "democratic_tendency"]
