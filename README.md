@@ -108,6 +108,8 @@ Claude (Anthropic)                32.1   81.0    56.55   +10.2
 ...
 ```
 
+If any actor's final `overall_score` is ≥ 2× the runner-up's `overall_score`, a **Dominant Win** banner is printed below the scores table. See §7.3 of MODEL_SPEC.md for the full condition definition.
+
 ---
 
 ## Terminal Color Coding
