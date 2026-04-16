@@ -128,6 +128,22 @@ class A2AChannel:
                 results.append(self._serialize(msg))
         return results
 
+    def get_history(self, actor: str, before_year: int) -> List[Dict[str, Any]]:
+        """
+        Return all personal A2A messages that `actor` sent or received in turns
+        strictly before `before_year`, in chronological order.
+        World events are excluded (they are surfaced separately in the prompt).
+        """
+        results = []
+        for msg in self._log:
+            if msg.year >= before_year:
+                continue
+            if msg.message_type == "world_event":
+                continue
+            if msg.sender == actor or msg.recipient == actor:
+                results.append(self._serialize(msg))
+        return results
+
     def tokens_remaining(self, actor: str, year: int) -> int:
         used = self._budgets.get(year, {}).get(actor, 0)
         return max(0, OUTGOING_TOKEN_BUDGET - used)

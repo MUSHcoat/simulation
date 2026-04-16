@@ -46,6 +46,8 @@ DISCRETE ACTION SET (max 2 actions per turn):
                        Effect: shifts any actor's value on one axis by up to ±5 from their
                                current value; target may be yourself or any other actor
                        Requires 'target', 'value_axis', 'value_delta' fields
+                       *** 'target' must be the actor's EXACT name — do NOT use the word
+                           'self'. To target yourself, write your own name as the target. ***
   diminish_competitor— Cost: 2 Capital + 1 Influence per point reduced
                        Effect: reduces target actor's Influence by 'amount' points
                        Uses 'amount' field; requires 'target' field

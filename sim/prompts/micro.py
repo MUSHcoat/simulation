@@ -23,6 +23,7 @@ def build_micro_action_prompt(
     year: int,
     personal_messages: List[Dict[str, Any]],
     national_compute_headroom: Optional[float] = None,
+    message_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     parts = [universal_ctx, ""]
 
@@ -101,6 +102,24 @@ def build_micro_action_prompt(
             parts.append(line)
         parts.append("")
 
+    # --- Full A2A history (all prior turns, sent and received) ---
+    if message_history:
+        # Group by year for readability
+        by_year: Dict[int, List[Dict]] = {}
+        for msg in message_history:
+            y = msg.get("year", 0)
+            by_year.setdefault(y, []).append(msg)
+        parts.append("PRIOR A2A HISTORY (all turns before this one — sent and received):")
+        for y in sorted(by_year):
+            parts.append(f"  Year {y}:")
+            for msg in by_year[y]:
+                sender = msg["sender"]
+                recipient = msg["recipient"]
+                content = msg["content"]
+                direction = "You → " + recipient if sender == actor.name else sender + " → You"
+                parts.append(f"    [{direction}]: {content}")
+        parts.append("")
+
     # --- World events and personal A2A messages (split by type) ---
     world_events = [m for m in personal_messages if m.get("message_type") == "world_event"]
     personal = [m for m in personal_messages
@@ -136,7 +155,7 @@ def build_micro_action_prompt(
         '    {\n'
         '      "action_type": "<one of the 7 action types>",\n'
         '      "amount": <float — ONLY for: acquire_compute, invest_capital, build_influence, diminish_competitor>,\n'
-        '      "target": "<actor name — ONLY for: publish_narrative (self or other), diminish_competitor>",\n'
+        '      "target": "<actor name — ONLY for: publish_narrative and diminish_competitor; use exact name, NOT \'self\'>",\n'
         '      "value_axis": "<axis name — ONLY for: publish_narrative>",\n'
         '      "value_delta": <int -5..+5 — ONLY for: publish_narrative>,\n'
         '      "rationale": "<why>"\n'
@@ -148,7 +167,9 @@ def build_micro_action_prompt(
         '}\n'
         'IMPORTANT: lobby_institution and accelerate_infrastructure are FLAT-COST — '
         'do NOT include an "amount" field for them. '
-        'publish_narrative MUST include "target", "value_axis", and "value_delta".'
+        'publish_narrative MUST include "target", "value_axis", and "value_delta". '
+        'For publish_narrative, "target" must be your exact actor name or another actor\'s '
+        'exact name — do NOT use the word "self".'
     )
 
     return "\n".join(parts)

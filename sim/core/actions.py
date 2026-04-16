@@ -156,6 +156,9 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
             return f"Insufficient capital ({actor.capital:.1f}) to build {amount:.1f} influence (cost {cost:.1f})"
 
     elif action_type == ACTION_PUBLISH_NARRATIVE:
+        # Normalize the literal string "self" → actor's actual name
+        if str(action.get("target", "")).strip().lower() == "self":
+            action["target"] = actor.name
         target_name = action.get("target")
         if not target_name:
             return "publish_narrative requires a target actor name"
@@ -257,6 +260,9 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         logger.info(f"    {actor.name}: build_influence +{amount:.1f} (cost {cost:.1f} capital)")
 
     elif action_type == ACTION_PUBLISH_NARRATIVE:
+        # Normalize the literal string "self" → actor's actual name (defensive fallback)
+        if str(action.get("target", "")).strip().lower() == "self":
+            action["target"] = actor.name
         target_name = action.get("target", "")
         value_axis  = action.get("value_axis", "")
         value_delta = int(action.get("value_delta", 0))
@@ -426,6 +432,10 @@ def programmatic_check_actions(
                     sim_capital -= cost
 
         elif atype == ACTION_PUBLISH_NARRATIVE:
+            # Normalize the literal string "self" → actor's actual name in-place,
+            # so the corrected target flows through to the jury and execution.
+            if str(action.get("target", "")).strip().lower() == "self":
+                action["target"] = actor.name
             missing = [
                 f for f in ("target", "value_axis", "value_delta")
                 if not action.get(f)

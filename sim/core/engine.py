@@ -279,6 +279,10 @@ class SimulationEngine:
                 m for m in self.channel.full_log()
                 if m["year"] == self.current_year and m["message_type"] == "world_event"
             ]
+            # Full sent+received history from all turns before this one
+            message_history = self.channel.get_history(
+                actor.name, before_year=self.current_year
+            )
             prompt = build_micro_action_prompt(
                 actor=actor,
                 parent_macro=parent_macro,
@@ -286,6 +290,7 @@ class SimulationEngine:
                 year=self.current_year,
                 personal_messages=prior_messages + world_events_now,
                 national_compute_headroom=national_headroom,
+                message_history=message_history,
             )
             try:
                 raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
