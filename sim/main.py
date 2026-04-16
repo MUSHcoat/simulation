@@ -153,12 +153,14 @@ def _load_states(overrides: dict) -> list:
 
         # Apply starting_values.json overrides if present
         sv_state = sv.get(name, {})
-        compute    = sv_state.get("compute",    cfg.get("compute",    50))
-        capital    = sv_state.get("capital",    cfg.get("capital",    50))
-        influence  = sv_state.get("influence",  cfg.get("influence",  50))
-        scr        = sv_state.get("supply_chain_robustness",
-                                   cfg.get("supply_chain_robustness", 50))
-        values     = {**cfg.get("values", {}), **sv_state.get("values", {})}
+        compute               = sv_state.get("compute",    cfg.get("compute",    50))
+        capital               = sv_state.get("capital",    cfg.get("capital",    50))
+        influence             = sv_state.get("influence",  cfg.get("influence",  50))
+        scr                   = sv_state.get("supply_chain_robustness",
+                                              cfg.get("supply_chain_robustness", 50))
+        infrastructure_buildout = sv_state.get("infrastructure_buildout",
+                                               cfg.get("infrastructure_buildout", 5))
+        values                = {**cfg.get("values", {}), **sv_state.get("values", {})}
 
         agent = MacroAgent(
             name=name,
@@ -167,6 +169,7 @@ def _load_states(overrides: dict) -> list:
             capital=float(capital),
             influence=float(influence),
             supply_chain_robustness=float(scr),
+            infrastructure_buildout=float(infrastructure_buildout),
             values=values,
         )
         agents.append(agent)
@@ -265,6 +268,10 @@ def main():
     # Load starting values (config/starting_values.json)
     sv = _load_starting_values()
 
+    # Compute economy parameters: starting_values.json > defaults
+    sv_guardrails = sv.get("guardrails", {})
+    global_compute_cap = float(sv_guardrails.get("global_compute_cap", 5000))
+
     # Scoring weights: CLI > starting_values.json > defaults
     sv_scoring = sv.get("scoring", {})
     sv_fw = sv_scoring.get("formula_weights", {})
@@ -311,6 +318,7 @@ def main():
         events=events,
         formula_weights=formula_weights,
         overall_weights=overall_weights,
+        global_compute_cap=global_compute_cap,
     )
 
     engine.run(years=args.years)
@@ -335,6 +343,11 @@ def main():
                 f"{s['overall']:>8.1f} {sign}{delta:>6.2f}"
             )
         print(f"{'='*55}")
+
+        if engine.dominant_winner:
+            print(f"\n*** DOMINANT WIN: {engine.dominant_winner} ***")
+            print(f"    (overall score >= 2x runner-up — see §7.3)")
+
         print(f"\nFull logs saved to: {output_dir}")
 
 

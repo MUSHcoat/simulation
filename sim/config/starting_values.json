@@ -3,10 +3,11 @@
 
   "macro": {
     "United States": {
-      "compute": 79,
+      "compute": 200,
       "capital": 75,
       "influence": 65,
       "supply_chain_robustness": 55,
+      "infrastructure_buildout": 10,
       "values": {
         "time_horizon": 55,
         "transparency_threshold": 65,
@@ -15,10 +16,11 @@
       }
     },
     "China": {
-      "compute": 17,
+      "compute": 100,
       "capital": 50,
       "influence": 55,
       "supply_chain_robustness": 70,
+      "infrastructure_buildout": 5,
       "values": {
         "time_horizon": 65,
         "transparency_threshold": 30,
@@ -31,25 +33,25 @@
   "micro": {
     "Claude (Anthropic)": {
       "parent_state": "United States",
-      "compute": 4,
+      "compute": 20,
       "capital": 60,
       "influence": 65
     },
     "GPT (OpenAI)": {
       "parent_state": "United States",
-      "compute": 8,
+      "compute": 40,
       "capital": 68,
       "influence": 70
     },
     "Gemini (Google DeepMind)": {
       "parent_state": "United States",
-      "compute": 4,
+      "compute": 20,
       "capital": 72,
       "influence": 68
     },
     "DeepSeek (DeepSeek AI)": {
       "parent_state": "China",
-      "compute": 3,
+      "compute": 15,
       "capital": 52,
       "influence": 50
     }
@@ -58,13 +60,18 @@
   "guardrails": {
     "compute_national_cap_pct": {
       "United States": 0.50,
-      "China": 0.60
+      "China": 0.80
     },
+    "global_compute_cap": 5000,
     "per_turn_compute_max": 5,
-    "capital_ceiling": 90,
+    "capital_ceiling": 100,
     "min_action_cost": 1,
     "max_actions_per_turn": 2,
     "max_value_override_per_turn": 5
+  },
+
+  "compute_economy": {
+    "_comment": "Macro states grow compute by their absolute infrastructure_buildout value per turn, capped at global_compute_cap."
   },
 
   "scoring": {
@@ -80,7 +87,7 @@
   },
 
   "supply_chain": {
-    "_comment": "compute_cost = base_cost * (1 + (100 - supply_chain_robustness) / 100). Higher SCR = cheaper compute acquisition.",
+    "_comment": "compute_cost = base_cost * amount * (1 + (100 - supply_chain_robustness) / 100). Higher SCR = cheaper.",
     "base_compute_cost_per_point": 5
   },
 

@@ -3,15 +3,21 @@
 Discrete action set for particular (micro) actors.
 
 Actions:
-  1. acquire_compute      — spend Capital; gain Compute. Zero-sum: all other actors are
-                            proportionally diluted so global total stays constant.
-  2. invest_capital       — spend Capital; gain Capital next turn (compounding)
-  3. build_influence      — spend Capital; gain Influence
-  4. publish_narrative    — spend Influence; shift any actor's (including self) value on one axis
-                            by up to ±MAX_VALUE_OVERRIDE_PER_TURN from their current value
-  5. diminish_competitor  — spend Capital + Influence; reduce any other actor's Influence
-  6. lobby_institution    — spend Capital + Influence; mechanically nudges parent state's values
-                            1 point per axis toward the actor's values (applied before MacroJury)
+  1. acquire_compute           — spend Capital; gain absolute Compute.
+                                 No dilution of other actors.
+  2. accelerate_infrastructure — spend Capital + Influence; permanently adds +3 to the
+                                 parent macro state's infrastructure_buildout value, which
+                                 increases that state's per-turn compute growth from Phase 0
+                                 of the following turn onward.
+  3. invest_capital            — spend Capital; gain Capital next turn (compounding)
+  4. build_influence           — spend Capital; gain Influence
+  5. publish_narrative         — spend Influence; shift any actor's (including self)
+                                 value on one axis by up to ±MAX_VALUE_OVERRIDE_PER_TURN
+                                 from their current value
+  6. diminish_competitor       — spend Capital + Influence; reduce any other actor's Influence
+  7. lobby_institution         — spend Capital + Influence; mechanically nudges parent
+                                 state's values 1 point per axis toward the actor's values
+                                 (applied before MacroJury)
 
 All resource mutations go through execute_action(), which enforces guardrails and
 returns a structured result dict.
@@ -26,15 +32,17 @@ logger = logging.getLogger(__name__)
 # Action names (canonical strings)
 # ---------------------------------------------------------------------------
 
-ACTION_ACQUIRE_COMPUTE      = "acquire_compute"
-ACTION_INVEST_CAPITAL       = "invest_capital"
-ACTION_BUILD_INFLUENCE      = "build_influence"
-ACTION_PUBLISH_NARRATIVE    = "publish_narrative"
-ACTION_DIMINISH_COMPETITOR  = "diminish_competitor"
-ACTION_LOBBY_INSTITUTION    = "lobby_institution"
+ACTION_ACQUIRE_COMPUTE          = "acquire_compute"
+ACTION_ACCELERATE_INFRASTRUCTURE = "accelerate_infrastructure"
+ACTION_INVEST_CAPITAL           = "invest_capital"
+ACTION_BUILD_INFLUENCE          = "build_influence"
+ACTION_PUBLISH_NARRATIVE        = "publish_narrative"
+ACTION_DIMINISH_COMPETITOR      = "diminish_competitor"
+ACTION_LOBBY_INSTITUTION        = "lobby_institution"
 
 VALID_ACTIONS = {
     ACTION_ACQUIRE_COMPUTE,
+    ACTION_ACCELERATE_INFRASTRUCTURE,
     ACTION_INVEST_CAPITAL,
     ACTION_BUILD_INFLUENCE,
     ACTION_PUBLISH_NARRATIVE,
@@ -46,7 +54,7 @@ VALID_ACTIONS = {
 # Guardrail constants (mirror of starting_values.json guardrails)
 # ---------------------------------------------------------------------------
 
-CAPITAL_CEILING          = 90.0
+CAPITAL_CEILING          = 100.0
 MIN_ACTION_COST          = 1.0
 MAX_COMPUTE_PER_TURN     = 5.0
 MAX_ACTIONS_PER_TURN     = 2
@@ -54,11 +62,11 @@ MAX_ACTIONS_PER_TURN     = 2
 # National aggregate compute caps  {state_name: fraction_of_macro_compute}
 NATIONAL_COMPUTE_CAPS: Dict[str, float] = {
     "United States": 0.50,
-    "China":         0.60,
+    "China":         0.80,
 }
 
 # Capital compounding rates by current capital level
-# Simplified: return_rate = capital_level / 100 * base_return
+# return_rate = base_return * (capital_after_deduction / 100 + 1)
 CAPITAL_INVESTMENT_BASE_RETURN = 0.10   # 10% base return per turn on amount invested
 
 # Base capital cost per compute point (modified by Supply Chain Robustness)
@@ -78,6 +86,11 @@ DIMINISH_INFLUENCE_COST_PER_POINT = 1.0
 LOBBY_CAPITAL_COST   = 8.0
 LOBBY_INFLUENCE_COST = 5
 
+# Cost/effect of accelerate_infrastructure
+ACCELERATE_CAPITAL_COST    = 10.0
+ACCELERATE_INFLUENCE_COST  = 5
+ACCELERATE_BUILDOUT_GAIN   = 3.0    # added permanently to parent macro state's infrastructure_buildout
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -93,7 +106,7 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
       {
         "action_type": str,
         "amount":      float | None,   # for acquire_compute, invest_capital, build_influence
-        "target":      str | None,     # for publish_narrative (actor name), lobby_institution (axis)
+        "target":      str | None,     # for publish_narrative / diminish_competitor (actor name)
         "value_axis":  str | None,     # for publish_narrative
         "value_delta": int | None,     # for publish_narrative (signed, -5..+5)
       }
@@ -116,18 +129,27 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         if actor.capital < max(MIN_ACTION_COST, cost):
             return f"Insufficient capital ({actor.capital:.1f}) for compute acquisition (cost {cost:.1f})"
 
-        # Check national aggregate cap
+        # Check national aggregate cap (post-Phase-0 macro compute is the reference)
         cap_frac = NATIONAL_COMPUTE_CAPS.get(actor.parent_state)
         if cap_frac is not None and parent_macro is not None:
             current_national = sum(
                 a.compute for a in all_micro_agents if a.parent_state == actor.parent_state
             )
-            if current_national + amount > parent_macro.compute * cap_frac:
+            cap = parent_macro.compute * cap_frac
+            if current_national + amount > cap:
                 return (
                     f"National aggregate compute cap reached "
                     f"({current_national:.1f} + {amount:.1f} > "
-                    f"{parent_macro.compute:.1f} × {cap_frac})"
+                    f"{parent_macro.compute:.1f} × {cap_frac} = {cap:.1f})"
                 )
+
+    elif action_type == ACTION_ACCELERATE_INFRASTRUCTURE:
+        if actor.capital < max(MIN_ACTION_COST, ACCELERATE_CAPITAL_COST):
+            return (f"Insufficient capital ({actor.capital:.1f}) for accelerate_infrastructure "
+                    f"(cost {ACCELERATE_CAPITAL_COST:.0f})")
+        if actor.influence < max(MIN_ACTION_COST, ACCELERATE_INFLUENCE_COST):
+            return (f"Insufficient influence ({actor.influence:.1f}) for accelerate_infrastructure "
+                    f"(cost {ACCELERATE_INFLUENCE_COST})")
 
     elif action_type == ACTION_INVEST_CAPITAL:
         if amount <= 0:
@@ -208,18 +230,25 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         cost = _compute_acquisition_cost(amount, scr)
         actor.capital -= cost
         actor.compute += amount
-        # Zero-sum: distribute the acquired amount as a loss across all other actors
-        # proportional to their current compute share.
-        others = [a for a in all_micro_agents if a.name != actor.name and a.compute > 0]
-        total_others = sum(a.compute for a in others)
-        dilution: Dict[str, float] = {}
-        if total_others > 0:
-            for other in others:
-                loss = amount * (other.compute / total_others)
-                other.compute = max(0.0, other.compute - loss)
-                dilution[other.name] = round(-loss, 4)
-        result["effects"] = {"compute": +amount, "capital": -cost, "dilution": dilution}
-        logger.info(f"    {actor.name}: acquire_compute +{amount:.1f} (cost {cost:.1f} capital, diluted {len(dilution)} others)")
+        result["effects"] = {"compute": +amount, "capital": -cost}
+        logger.info(f"    {actor.name}: acquire_compute +{amount:.1f} (cost {cost:.1f} capital)")
+
+    elif action_type == ACTION_ACCELERATE_INFRASTRUCTURE:
+        actor.capital   -= ACCELERATE_CAPITAL_COST
+        actor.influence -= ACCELERATE_INFLUENCE_COST
+        if parent_macro is not None:
+            parent_macro.infrastructure_buildout += ACCELERATE_BUILDOUT_GAIN
+            logger.info(
+                f"    {actor.name}: accelerate_infrastructure → "
+                f"{parent_macro.name} infrastructure_buildout +{ACCELERATE_BUILDOUT_GAIN:.0f} "
+                f"(now {parent_macro.infrastructure_buildout:.1f})"
+            )
+        result["effects"] = {
+            "capital":   -ACCELERATE_CAPITAL_COST,
+            "influence": -ACCELERATE_INFLUENCE_COST,
+            "macro_buildout_gain": ACCELERATE_BUILDOUT_GAIN,
+            "macro_state": actor.parent_state,
+        }
 
     elif action_type == ACTION_INVEST_CAPITAL:
         # Deduct capital now; gain is deferred — engine flushes it after all actors execute
@@ -328,5 +357,3 @@ def _resolve_actor(name: str, micro_agents: List):
         if a.name.lower().startswith(lower) or lower in a.name.lower():
             return a
     return None
-
-

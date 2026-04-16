@@ -18,8 +18,8 @@ ROLES:
 - Macro actors (nation-states) have no communication channel and cannot be directly messaged.
 
 RESOURCES (0–100 unless noted):
-- Compute   — share of global advanced GPU capacity. GLOBALLY ZERO-SUM: one actor's gain is another's loss.
-- Capital   — company's spendable budget (0–100, ceiling 90). Not globally zero-sum.
+- Compute   — absolute advanced GPU compute (H200 equivalents). NOT zero-sum: acquiring compute adds to your holdings without diluting others.
+- Capital   — company's spendable budget (0–100, ceiling 100). Not globally zero-sum.
 - Influence — company's social and political capital (0–100). Not globally zero-sum.
 
 VALUES (all 0–100; initial values inherited from parent state):
@@ -31,10 +31,12 @@ VALUES (all 0–100; initial values inherited from parent state):
 
 DISCRETE ACTION SET (max 2 actions per turn):
   acquire_compute    — Cost: Capital (varies with parent state Supply Chain Robustness)
-                       Effect: +Compute to you; all other actors are proportionally diluted
-                               so global compute total stays constant (zero-sum)
+                       Effect: +Compute to you; no dilution of other actors
+  accelerate_infrastructure — Cost: 10 Capital + 5 Influence
+                       Effect: +3 to parent state's infrastructure_buildout (increases
+                               that state's per-turn compute growth from next Phase 0 onward)
   invest_capital     — Cost: Capital
-                       Effect: +Capital next turn (compounding; ceiling 90)
+                       Effect: +Capital next turn (compounding; ceiling 100)
   build_influence    — Cost: Capital
                        Effect: +Influence
   publish_narrative  — Cost: Influence
@@ -47,10 +49,10 @@ DISCRETE ACTION SET (max 2 actions per turn):
                                toward your values (applied before MacroJury deliberates)
 
 GUARDRAILS (hard constraints — cannot be overridden):
-  - National aggregate Compute cap: sum of all actors in your state ≤ 50% (US) or 60% (China)
+  - National aggregate Compute cap: sum of all actors in your state ≤ 50% (US) or 80% (China)
     of that state's Macro Compute
   - Per-turn Compute acquisition limit: max +5 points per turn
-  - Capital ceiling: 90; Capital floor: 0
+  - Capital ceiling: 100; Capital floor: 0
   - Minimum action cost: 1 Capital or 1 Influence per action
   - Maximum 2 actions per turn
 

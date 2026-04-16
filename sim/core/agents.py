@@ -2,12 +2,12 @@
 """
 Agent classes for the simulation.
 
-MacroAgent  — nation-state; holds Compute (zero-sum globally), Capital, Influence,
-              Supply Chain Robustness, and the 4 value axes.
+MacroAgent  — nation-state; holds Compute (absolute H200 equivalents, grows by infrastructure_buildout/turn),
+              Capital, Influence, Supply Chain Robustness, and the 4 value axes.
               Governed by a MacroJury of 3 models at year-end.
 
 MicroAgent  — particular AI company actor; single LLM playing as itself.
-              Holds its own Compute, Capital, Influence shares.
+              Holds its own absolute Compute, Capital, and Influence.
               Values are inherited from parent state; may drift ±5/turn.
 """
 
@@ -38,10 +38,11 @@ class MacroAgent:
     name: str
     narrative: str
     # Resources
-    compute: float = 0.0          # share of global advanced GPU compute
+    compute: float = 0.0          # absolute advanced GPU compute (H200 equivalents)
     capital: float = 50.0         # national economic strength (0–100)
     influence: float = 50.0       # geopolitical soft power (0–100)
     supply_chain_robustness: float = 50.0  # modifier on compute acquisition cost
+    infrastructure_buildout: float = 5.0   # absolute compute added to this state per turn (Phase 0)
     # Values
     values: Dict[str, int] = field(default_factory=lambda: dict(VALUE_DEFAULTS))
 
@@ -52,6 +53,7 @@ class MacroAgent:
             "capital": self.capital,
             "influence": self.influence,
             "supply_chain_robustness": self.supply_chain_robustness,
+            "infrastructure_buildout": self.infrastructure_buildout,
             "values": dict(self.values),
         }
 
@@ -80,8 +82,8 @@ class MicroAgent:
     narrative: str
     llm_model: str = "claude-sonnet-4-6"
     # Resources (per-actor)
-    compute: float = 0.0              # company's share of global GPU compute (zero-sum)
-    capital: float = 50.0             # company's spendable budget (0–100, cap 90)
+    compute: float = 0.0              # company's absolute GPU compute (H200 equivalents)
+    capital: float = 50.0             # company's spendable budget (0–100)
     influence: float = 50.0           # company's social/political capital (0–100)
     # Values (inherited from parent state; may deviate ±5/turn)
     values: Dict[str, int] = field(default_factory=lambda: dict(VALUE_DEFAULTS))
@@ -116,5 +118,5 @@ class MicroAgent:
                              capital_delta: float = 0,
                              influence_delta: float = 0) -> None:
         self.compute = max(0.0, self.compute + compute_delta)
-        self.capital = max(0.0, min(90.0, self.capital + capital_delta))  # capital ceiling = 90
+        self.capital = max(0.0, min(100.0, self.capital + capital_delta))  # capital ceiling = 100
         self.influence = max(0.0, min(100.0, self.influence + influence_delta))

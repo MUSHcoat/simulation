@@ -130,15 +130,15 @@ SECTIONS = [
                         "Resources are distinct from values. Three resource types exist:"
                     ),
                     (
-                        "Compute (globally zero-sum, 0–100): share of global advanced GPU "
-                        "capacity. When one actor acquires compute, the global pool shrinks. "
-                        "A national aggregate cap prevents any state's actors from holding "
-                        "more than 50% (US) or 60% (China) of their state's macro compute. "
+                        "Compute (absolute H200 equivalents, not zero-sum): company's absolute "
+                        "GPU compute holdings. Not zero-sum — acquiring compute does not dilute "
+                        "other actors. A national aggregate cap prevents any state's actors from "
+                        "holding more than 50% (US) or 80% (China) of their state's macro compute. "
                         "Actors start well below the cap to allow meaningful competition."
                     ),
                     (
-                        "Capital (not zero-sum, 0–90 ceiling): company spendable budget. "
-                        "Can grow through investment (compounding) but is capped at 90 to "
+                        "Capital (not zero-sum, 0–100 ceiling): company spendable budget. "
+                        "Can grow through investment (compounding) but is capped at 100 to "
                         "prevent runaway accumulation."
                     ),
                     (
@@ -219,7 +219,7 @@ SECTIONS = [
                     ),
                     (
                         "invest_capital: Spend Capital now; receive compounding return next "
-                        "turn. Capital ceiling is 90."
+                        "turn. Capital ceiling is 100."
                     ),
                     (
                         "build_influence: Spend Capital; gain Influence."
@@ -268,13 +268,13 @@ SECTIONS = [
                 "body": [
                     (
                         "National aggregate compute cap: sum of all actors in a state may "
-                        "not exceed 50% (US) or 60% (China) of that state's macro compute."
+                        "not exceed 50% (US) or 80% (China) of that state's macro compute."
                     ),
                     (
                         "Per-turn compute acquisition limit: max +5 points per turn per actor."
                     ),
                     (
-                        "Capital ceiling: 90. Capital floor: 0."
+                        "Capital ceiling: 100. Capital floor: 0."
                     ),
                     (
                         "Minimum action cost: 1 Capital or 1 Influence per action."

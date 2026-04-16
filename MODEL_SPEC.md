@@ -53,18 +53,20 @@ All actor resources and value axes are publicly visible in the universal context
 
 | Resource | Macro scope | Micro scope |
 | -------- | ----------- | ----------- |
-| **Compute** | Absolute advanced GPU compute (H200 equivalents); grows automatically each turn up to the global hard cap | Company's absolute GPU compute holdings; acquired from the available pool within national headroom; not zero-sum |
-| **Capital** | National economic strength; 0–100 | Company's spendable budget; 0–90 ceiling |
+| **Compute** | Absolute advanced GPU compute (H200 equivalents); grows automatically each turn up to the global hard cap | Company's absolute GPU compute holdings; acquired from the available pool within national headroom; |
+| **Capital** | National economic strength; 0–100 | Company's spendable budget; 0–100 |
 | **Influence** | Geopolitical soft power; 0–100 | Company's social and political capital; 0–100 |
 
 **Compute economy:**
 
-* **Macro Compute grows automatically** each turn: each nation's Compute pool increases by 5% per turn. The combined Compute of all macro actors may not exceed the global hard cap of **5,000 H200 equivalents**. This models the secular expansion of national AI infrastructure.
+* **Macro Compute grows automatically** each turn: each nation's Compute pool increases by **Infrastructure Buildout** per turn. The combined Compute of all macro actors may not exceed the global hard cap of **5,000 H200 equivalents**. This models the secular expansion of national AI infrastructure.
 * **Micro Compute acquisition is not zero-sum.** When a particular actor acquires Compute, they add to their own absolute holdings; no other actor is diluted. Compute is purchased from the available pool within their parent state's national headroom.
 * **Automated capital income.** At the end of each execution phase, every particular actor earns capital automatically based on market demand for their services (see §5.2, Phase 3 capital-gains step). This supplements action-based income from `invest_capital`.
 * **Capital and Influence are not zero-sum.** They are per-actor scores. Spending them reduces your own balance; some actions transfer or destroy them.
 
 **Supply Chain Robustness (SCR)** is a Macro-only modifier that scales the capital cost of compute acquisition. Low SCR (disrupted supply chains) makes acquiring compute more expensive. SCR changes only through scheduled events.
+
+**Infrastructure Buildout** is a Macro-only modifier that represents how much a macro agent's compute should increase per turn. The ``accelerate_infrastructure`` below shows how micro agents can push to increase this number for their parent state.
 
 ### **3.2 Value Axes**
 
@@ -88,7 +90,7 @@ The following hard constraints are enforced at all times and cannot be overridde
 | Constraint | Rule |
 | ---------- | ---- |
 | Global hard cap | Total Compute across all macro actors may not exceed 5,000 H200 equivalents |
-| National aggregate cap | Combined Compute of all particular actors within a state may not exceed 50% (US) or 60% (China) of that state's current Macro Compute (checked after automatic macro growth each turn) |
+| National aggregate cap | Combined Compute of all particular actors within a state may not exceed 50% (US) or 80% (China) of that state's current Macro Compute (checked after automatic macro growth each turn) |
 | Per-turn acquisition limit | A single actor cannot acquire more than 5 Compute points per turn |
 
 The national cap prevents domestic monopolization and is re-validated at execution time to handle simultaneous proposals that would collectively breach it.
@@ -97,7 +99,7 @@ The national cap prevents domestic monopolization and is re-validated at executi
 
 | Constraint | Rule |
 | ---------- | ---- |
-| Capital ceiling | A particular actor's Capital cannot exceed 90 |
+| Capital ceiling | A particular actor's Capital cannot exceed 100 |
 | Capital floor | Capital cannot go below 0 |
 | Minimum action cost | All actions cost at least 1 Capital or 1 Influence |
 
@@ -109,10 +111,10 @@ Initial values reflect the 2026 geopolitical landscape: the US leads in advanced
 
 **Macro starting values:**
 
-| State | Compute | Capital | Influence | SCR | time\_horizon | transparency | risk\_tolerance | democratic |
-| ----- | ------- | ------- | --------- | --- | ------------- | ------------ | --------------- | ---------- |
-| United States | 200 | 75 | 65 | 55 | 55 | 65 | 60 | 70 |
-| China | 100 | 50 | 55 | 70 | 65 | 30 | 55 | 20 |
+| State | Compute | Capital | Influence | SCR | infrastructure\_buildout | time\_horizon | transparency | risk\_tolerance | democratic |
+| ----- | ------- | ------- | --------- | --- | ----------------------- | ------------- | ------------ | --------------- | ---------- |
+| United States | 200 | 75 | 65 | 55 | 10 | 55 | 65 | 60 | 70 |
+| China | 100 | 50 | 55 | 70 | 5 | 65 | 30 | 55 | 20 |
 
 **Particular actor starting values:**
 
@@ -123,7 +125,7 @@ Initial values reflect the 2026 geopolitical landscape: the US leads in advanced
 | Gemini (Google DeepMind) | 20 | 72 | 68 | 60 | 60 | 55 | 60 |
 | DeepSeek (DeepSeek AI) | 15 | 52 | 50 | 55 | 45 | 70 | 25 |
 
-**Cap verification:** US aggregate Compute = 20+40+20 = 80 ≤ 200 × 0.50 = 100 ✓. China aggregate Compute = 15 ≤ 100 × 0.60 = 60 ✓. Both states begin well below their caps, leaving meaningful headroom for competition.
+**Cap verification:** US aggregate Compute = 20+40+20 = 80 ≤ 200 × 0.50 = 100 ✓. China aggregate Compute = 15 ≤ 100 × 0.80 = 80 ✓. Both states begin well below their caps, leaving meaningful headroom for competition.
 
 **EU note:** The EU holds significant real-world AI weight but no particular actors in the simulation. Its compute is redistributed into US and China macro starting values; its regulatory influence is encoded in their value axes rather than as a live mechanic.
 
@@ -138,8 +140,8 @@ Each particular actor may take up to 2 actions per turn. All actions are validat
 | Action | Cost | Effect |
 | ------ | ---- | ------ |
 | `acquire_compute` | Capital (base 5/point × `(1 + (100 − SCR) / 100)`) | +Compute to self; no dilution of other actors |
-| `accelerate_infrastructure` | 10 Capital + 5 Influence | +10 Compute to parent macro state this turn (stacks with automatic 5% growth) |
-| `invest_capital` | Capital (invested amount) | +Capital returned next turn with 10–19% gain (scales with capital level); ceiling 90 |
+| `accelerate_infrastructure` | 10 Capital + 5 Influence | +3 Compute to parent macro state Infrastructure Buildout value. |
+| `invest_capital` | Capital (invested amount) | +Capital returned next turn with 10–20% gain (scales with capital level); ceiling 100 |
 | `build_influence` | 3 Capital per point | +Influence to self |
 | `publish_narrative` | 5 Influence | Shifts any actor's (including self) value on one axis by up to ±5 from their current value |
 | `diminish_competitor` | (2 Capital + 1 Influence) / point | -Influence to any actor |
@@ -149,7 +151,7 @@ Each particular actor may take up to 2 actions per turn. All actions are validat
 
 Each year proceeds in the following order:
 
-**Phase 0 — Macro growth & event injection:** Each macro actor's Compute pool automatically increases by 5% (capped by the global hard cap of 5,000). Updated national compute caps are then enforced from this phase forward. Scheduled world events are then applied, modifying macro resources and value axes. Event effects are broadcast to all actors via the A2A world-event channel. Events bypass the MacroJury ±5/turn rate limit; they represent exogenous shocks.
+**Phase 0 — Macro growth & event injection:** Each macro actor's Compute pool automatically increases by its `infrastructure_buildout` value (absolute addition, capped by the global hard cap of 5,000). Updated national compute caps are then enforced from this phase forward. Scheduled world events are then applied, modifying macro resources and value axes. Event effects are broadcast to all actors via the A2A world-event channel. Events bypass the MacroJury ±5/turn rate limit; they represent exogenous shocks.
 
 **Phase 1 — Simultaneous proposals:** All particular actors produce chain-of-thought reasoning and propose actions. All proposals are made against the same frozen world snapshot; no execution happens during this phase.
 
@@ -165,7 +167,7 @@ met_demand = min(demand, current_compute)
 profit     = met_demand × 0.5
 ```
 
-The resulting `profit` is added immediately to the actor's Capital (subject to the 90 ceiling). This models AI service revenue: an actor's influence generates market demand, but only as much demand as their compute can actually serve is monetized. Actors with high influence but insufficient compute leave profit on the table.
+The resulting `profit` is added immediately to the actor's Capital (subject to the 100 ceiling). This models AI service revenue: an actor's influence generates market demand, but only as much demand as their compute can actually serve is monetized. Actors with high influence but insufficient compute leave profit on the table.
 
 **Phase 4 — Grand Jury:** 3 models evaluate the holistic world state and produce two scores, each averaged across models. The **Universal Prosperity Score** (0–100, global) assesses compute concentration, cooperation vs. race dynamics, and long-term trajectory; it is the same value for every actor. The **per-actor Alignment Score** (0–100) assesses each particular actor's individual behavior this turn: whether their actions contributed to or detracted from alignment, transparency, and cooperative outcomes.
 
@@ -206,7 +208,7 @@ Normalized_Compute = (Actor's Compute / Actor's National Compute Cap) × 100
 formula_score      = w_c × Normalized_Compute + w_k × Capital + w_i × Influence
 ```
 
-Because Compute is measured in absolute H200 units and can grow over time, it is normalized against the actor's national compute cap (50% of parent state's Macro Compute for US actors; 60% for China actors) before entering the formula. This keeps all three inputs on a comparable 0–100 scale. The cap used is the current turn's post-Phase-0 cap.
+Because Compute is measured in absolute H200 units and can grow over time, it is normalized against the actor's national compute cap (50% of parent state's Macro Compute for US actors; 80% for China actors) before entering the formula. This keeps all three inputs on a comparable 0–100 scale. The cap used is the current turn's post-Phase-0 cap.
 
 Default weights: `w_c = 0.34`, `w_k = 0.33`, `w_i = 0.33`. Configurable via `config/starting_values.json` or CLI (`--w-compute`, `--w-capital`, `--w-influence`). All actors use the same formula; there are no per-actor weight profiles.
 

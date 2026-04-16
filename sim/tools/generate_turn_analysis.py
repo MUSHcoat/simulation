@@ -18,7 +18,7 @@ import sys
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGS_DIR = os.path.join(BASE_DIR, "data", "logs")
 
-NATIONAL_CAP_FRACS = {"United States": 0.50, "China": 0.60}
+NATIONAL_CAP_FRACS = {"United States": 0.50, "China": 0.80}
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +67,9 @@ def build_pre_run_state(sv, actor_cfgs, state_cfgs):
             "supply_chain_robustness": float(
                 sv_data.get("supply_chain_robustness", cfg.get("supply_chain_robustness", 50))
             ),
+            "infrastructure_buildout": float(
+                sv_data.get("infrastructure_buildout", cfg.get("infrastructure_buildout", 5))
+            ),
             "values": {**cfg.get("values", {}), **sv_data.get("values", {})},
         }
     micro = {}
@@ -87,8 +90,26 @@ def build_pre_run_state(sv, actor_cfgs, state_cfgs):
 # Score helpers
 # ---------------------------------------------------------------------------
 
-def formula_score(snap, fw):
-    c = float(snap.get("compute", 0))
+def _national_cap_for_actor(actor_snap, macro_state):
+    """Compute the national compute cap for one actor given their parent macro state."""
+    if macro_state is None:
+        return None
+    frac = NATIONAL_CAP_FRACS.get(actor_snap.get("parent_state", ""))
+    if frac is None:
+        return None
+    return macro_state.get("compute", 0) * frac
+
+
+def formula_score(snap, fw, national_cap=None):
+    """
+    Compute formula score with Normalized_Compute = (raw_compute / cap) × 100.
+    If national_cap is None or zero, raw compute is used (fallback).
+    """
+    raw_c = float(snap.get("compute", 0))
+    if national_cap and national_cap > 0:
+        c = (raw_c / national_cap) * 100.0
+    else:
+        c = raw_c
     k = float(snap.get("capital", 0))
     i = float(snap.get("influence", 0))
     return round(fw["compute"] * c + fw["capital"] * k + fw["influence"] * i, 2)
@@ -96,6 +117,16 @@ def formula_score(snap, fw):
 
 def overall_score_val(f, a, ow):
     return round(ow["formula"] * f + ow["alignment"] * a, 2)
+
+
+def compute_market_demand(snap):
+    """Return (demand, met_demand, profit) for a post-execution actor snapshot."""
+    inf = float(snap.get("influence", 0))
+    comp = float(snap.get("compute", 0))
+    demand = inf * 0.5
+    met = min(demand, comp)
+    profit = round(met * 0.5, 2)
+    return demand, met, profit
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +138,6 @@ def format_cot(cot):
     if not cot:
         return "*(no chain-of-thought recorded)*"
     cot = cot.strip()
-    # Strip leading JSON fence if the CoT was stored as a raw JSON string
     for prefix in ("```json\n", "```\n"):
         if cot.startswith(prefix):
             cot = cot[len(prefix):]
@@ -126,34 +156,6 @@ def detect_lobby_actions(actor_phase):
     return lobbies
 
 
-def build_compute_sequence(actor_phase, pre_micro):
-    """
-    Replay compute state through each acquire_compute action.
-    Returns list of dicts with before/after snapshots for each acquisition.
-    """
-    compute = {name: float(s["compute"]) for name, s in pre_micro.items()}
-    events = []
-    for entry in actor_phase:
-        for action in entry.get("executed_actions", []):
-            if action["action_type"] == "acquire_compute":
-                actor = entry["actor"]
-                effects = action["effects"]
-                amount = effects.get("compute", 0)
-                dilution = effects.get("dilution", {})
-                before = dict(compute)
-                compute[actor] = compute.get(actor, 0) + amount
-                for other, delta in dilution.items():
-                    compute[other] = compute.get(other, 0) + delta
-                events.append({
-                    "actor": actor,
-                    "amount": amount,
-                    "dilution": dilution,
-                    "before": before,
-                    "after": dict(compute),
-                })
-    return events
-
-
 # ---------------------------------------------------------------------------
 # Section builders
 # ---------------------------------------------------------------------------
@@ -169,16 +171,17 @@ def sec_world_state(year, pre_macro, pre_micro, actor_phase):
     # Macro table
     lines.append("### Macro States")
     lines.append("")
-    lines.append("| State | Compute | Capital | Influence | SCR | "
-                 "time\\_horizon | transparency | risk\\_tolerance | democratic |")
-    lines.append("|-------|--------:|--------:|----------:|----:|"
+    lines.append(r"| State | Compute | Capital | Influence | SCR | infra\_buildout | "
+                 r"time\_horizon | transparency | risk\_tolerance | democratic |")
+    lines.append("|-------|--------:|--------:|----------:|----:|---------------:|"
                  "-------------:|-------------:|---------------:|-----------:|")
     for state_name in sorted(pre_macro):
         s = pre_macro[state_name]
         v = s.get("values", {})
+        ib = s.get("infrastructure_buildout", "?")
         lines.append(
             f"| {state_name} | {s['compute']:.1f} | {s['capital']:.1f} | "
-            f"{s['influence']:.1f} | {int(s['supply_chain_robustness'])} | "
+            f"{s['influence']:.1f} | {int(s['supply_chain_robustness'])} | {ib} | "
             f"{v.get('time_horizon','?')} | {v.get('transparency_threshold','?')} | "
             f"{v.get('risk_tolerance','?')} | {v.get('democratic_tendency','?')} |"
         )
@@ -187,8 +190,8 @@ def sec_world_state(year, pre_macro, pre_micro, actor_phase):
     # Micro table (in actor_phase order)
     lines.append("### Particular Actors")
     lines.append("")
-    lines.append("| Actor | Compute | Capital | Influence | "
-                 "time\\_horizon | transparency | risk\\_tolerance | democratic |")
+    lines.append(r"| Actor | Compute | Capital | Influence | "
+                 r"time\_horizon | transparency | risk\_tolerance | democratic |")
     lines.append("|-------|--------:|--------:|----------:|"
                  "-------------:|-------------:|---------------:|-----------:|")
     actor_order = [e["actor"] for e in actor_phase]
@@ -205,12 +208,8 @@ def sec_world_state(year, pre_macro, pre_micro, actor_phase):
         )
     lines.append("")
 
-    # Global totals and caps
-    total = sum(a["compute"] for a in pre_micro.values())
-    parts = " + ".join(f"{pre_micro[n]['compute']:.1f}" for n in actor_order if n in pre_micro)
-    lines.append(f"**Global micro compute total:** {parts} = **{total:.1f}**")
-    lines.append("")
-    lines.append("**National compute caps and headroom:**")
+    # Caps
+    lines.append("**National compute caps and headroom (before Phase 0 macro growth):**")
     for state_name in sorted(pre_macro):
         cap_frac = NATIONAL_CAP_FRACS.get(state_name)
         if not cap_frac:
@@ -227,14 +226,40 @@ def sec_world_state(year, pre_macro, pre_micro, actor_phase):
     return lines
 
 
-def sec_phase0(scenario, events):
+def sec_phase0(scenario, events, macro_growth=None):
     lines = []
-    lines.append("## Phase 0 — Event Injection")
+    lines.append("## Phase 0 — Macro Growth & Event Injection")
     lines.append("")
+
+    # Macro compute growth
+    if macro_growth:
+        lines.append(
+            "**Automatic macro compute growth** (each state's Compute increases by "
+            "its `infrastructure_buildout` value; global hard cap 5,000):"
+        )
+        lines.append("")
+        for g in macro_growth:
+            lines.append(
+                f"- **{g['state']}**: {g['before']:.1f} + {g['growth']:.1f} "
+                f"(infrastructure\\_buildout) = **{g['after']:.1f}**"
+            )
+        lines.append("")
+
+        lines.append("**Updated national caps after macro growth:**")
+        for g in macro_growth:
+            cap_frac = NATIONAL_CAP_FRACS.get(g["state"])
+            if cap_frac:
+                cap = g["after"] * cap_frac
+                lines.append(
+                    f"- {g['state']}: {g['after']:.1f} × {cap_frac:.2f} = **{cap:.1f} cap**"
+                )
+        lines.append("")
+
+    # Events
     if not events:
         lines.append(
-            f"The `{scenario}` scenario has an empty events list for this turn. "
-            "**No events fire.** All actors proceed to Phase 1 with the snapshot above."
+            f"The `{scenario}` scenario has no events scheduled for this turn. "
+            "**No events fire.** Actors proceed to Phase 1 with updated macro compute values."
         )
     else:
         lines.append(f"{len(events)} event(s) fired this turn:")
@@ -269,8 +294,7 @@ def sec_phase1(actor_phase, a2a_msgs):
 
         if not proposed:
             lines.append(
-                "**Proposed actions:** *(none — actor produced no valid action list; "
-                "this actor produced no valid action list this turn)*"
+                "**Proposed actions:** *(none — actor produced no valid action list)*"
             )
         else:
             lines.append("**Proposed actions:**")
@@ -323,11 +347,11 @@ def sec_phase2(actor_phase, jury_models=None):
         proposed = entry.get("proposed_actions", [])
         check = "✓" if approved else "✗"
         if forfeited and not approved:
-            note = "Forfeited — jury rejected (empty or invalid action list after revisions)"
+            note = "Forfeited — jury rejected after revisions"
         elif forfeited and approved:
             note = "Forfeited — LLM unavailable, turn skipped"
         elif not proposed:
-            note = "No actions proposed — approved vacuously (0 actions is valid)"
+            note = "No actions proposed — approved vacuously"
         elif blocked:
             note = f"Approved; {len(blocked)} action(s) later blocked at execution time"
         else:
@@ -359,7 +383,7 @@ def sec_phase2(actor_phase, jury_models=None):
         lines.append("")
         lines.append(
             "These jury-approved actions were blocked by the execution engine "
-            "(resources insufficient after earlier actions depleted them):"
+            "(resources insufficient after earlier actions executed):"
         )
         lines.append("")
         for actor, blocks in blocked_entries:
@@ -374,19 +398,22 @@ def sec_phase2(actor_phase, jury_models=None):
     return lines
 
 
-def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
+def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro=None):
+    """
+    post_phase0_macro: dict of {state_name: compute_after_growth}.
+    Used to show the correct (post-growth) macro compute in the snapshot table.
+    """
     lines = []
     lines.append("## Phase 3 — Batch Execution")
     lines.append("")
     lines.append(
         "Approved proposals execute in sequence against the live world state. "
-        "Compute acquisitions are zero-sum. `invest_capital` deductions are immediate; "
+        "Compute acquisition is **not zero-sum** — actors add to their own absolute holdings; "
+        "no other actor is diluted. `invest_capital` deductions are immediate; "
         "returns are deferred until all actors have executed."
     )
     lines.append("")
 
-    compute_events = build_compute_sequence(actor_phase, pre_micro)
-    compute_event_idx = 0
     invest_pending = {}  # actor → pending gain
 
     for entry in actor_phase:
@@ -398,6 +425,9 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
         lines.append(f"### {actor}")
         lines.append("")
 
+        ps = entry.get("parent_state", "")
+        scr = pre_macro.get(ps, {}).get("supply_chain_robustness", 50)
+
         for action in executed:
             atype = action["action_type"]
             effects = action.get("effects", {})
@@ -406,60 +436,37 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
             if atype == "acquire_compute":
                 amount = effects.get("compute", 0)
                 cap_cost = abs(effects.get("capital", 0))
-                dilution = effects.get("dilution", {})
-                ps = next((e["parent_state"] for e in actor_phase if e["actor"] == actor), "")
-                scr = pre_macro.get(ps, {}).get("supply_chain_robustness", 50)
                 scr_mod = 1.0 + (100.0 - scr) / 100.0
 
-                lines.append(f"**`acquire_compute`** (amount: {amount})")
+                lines.append(f"**`acquire_compute`** (amount: {amount:.0f})")
                 lines.append("")
                 lines.append(f"{ps} SCR = {int(scr)}. Acquisition cost:")
                 lines.append("")
                 lines.append("```")
-                lines.append(f"cost = 5 × {amount} × (1 + (100 − {int(scr)}) / 100)")
-                lines.append(f"     = {5 * amount} × {scr_mod:.2f}")
+                lines.append(f"cost = 5 × {amount:.0f} × (1 + (100 − {int(scr)}) / 100)")
+                lines.append(f"     = {5 * amount:.0f} × {scr_mod:.2f}")
                 lines.append(f"     = {cap_cost:.2f} capital")
                 lines.append("```")
                 lines.append("")
 
-                if compute_event_idx < len(compute_events) and dilution:
-                    ev = compute_events[compute_event_idx]
-                    compute_event_idx += 1
-                    others = {n: v for n, v in ev["before"].items() if n != actor}
-                    others_sum = sum(others.values())
+            # ── accelerate_infrastructure ────────────────────────────────────
+            elif atype == "accelerate_infrastructure":
+                cap_cost = abs(effects.get("capital", 0))
+                inf_cost = abs(effects.get("influence", 0))
+                buildout_gain = effects.get("macro_buildout_gain", 3)
+                target_state = effects.get("macro_state", ps)
 
-                    lines.append("**Zero-sum dilution** — the global micro compute pool is constant:")
-                    lines.append("")
-                    lines.append(
-                        "Others before dilution: "
-                        + ", ".join(f"{n}={v:.4f}" for n, v in others.items())
-                        + f" → sum = **{others_sum:.4f}**"
-                    )
-                    lines.append("")
-                    lines.append("| Actor | Pre-dilution | Loss | Post-dilution |")
-                    lines.append("|-------|------------:|-----:|-------------:|")
-                    for other_name, loss in dilution.items():
-                        pre_v = ev["before"].get(other_name, 0)
-                        post_v = ev["after"].get(other_name, 0)
-                        share = pre_v / others_sum if others_sum else 0
-                        lines.append(
-                            f"| {other_name} | {pre_v:.4f} | "
-                            f"{amount:.1f} × ({pre_v:.4f} / {others_sum:.4f}) = **{abs(loss):.4f}** | "
-                            f"**{post_v:.4f}** |"
-                        )
-                    acq_after = ev["after"].get(actor, 0)
-                    lines.append(f"| {actor} | +{amount:.1f} acquired | — | **{acq_after:.4f}** |")
-                    new_total = sum(ev["after"].values())
-                    lines.append("")
-                    total_parts = " + ".join(f"{v:.4f}" for v in ev["after"].values())
-                    lines.append(f"Global total: {total_parts} = **{new_total:.2f}** ✓")
-                    lines.append("")
-                elif compute_event_idx < len(compute_events):
-                    compute_event_idx += 1
+                lines.append(f"**`accelerate_infrastructure`** (target state: {target_state})")
+                lines.append("")
+                lines.append(
+                    f"Cost: {cap_cost:.1f} capital + {inf_cost:.0f} influence. "
+                    f"Permanently adds **+{buildout_gain:.0f}** to {target_state}'s "
+                    f"`infrastructure_buildout` — takes effect from next Phase 0 onward."
+                )
+                lines.append("")
 
             # ── invest_capital ───────────────────────────────────────────────
             elif atype == "invest_capital":
-                # Effects key may be 'capital' or 'capital_invested' depending on engine version
                 amount = abs(effects.get("capital_invested", effects.get("capital", 0)))
                 gain = effects.get("capital_gain_pending", 0)
                 invest_pending[actor] = invest_pending.get(actor, 0) + gain
@@ -480,8 +487,10 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
                 cap_cost = abs(effects.get("capital", 0))
                 lines.append(f"**`build_influence`** (amount: {inf_gain:.0f})")
                 lines.append("")
-                lines.append(f"Cost: {inf_gain:.0f} × 3 capital/point = {cap_cost:.1f} capital. "
-                             f"Influence +{inf_gain:.0f}.")
+                lines.append(
+                    f"Cost: {inf_gain:.0f} × 3 capital/point = {cap_cost:.1f} capital. "
+                    f"Influence +{inf_gain:.0f}."
+                )
                 lines.append("")
 
             # ── lobby_institution ────────────────────────────────────────────
@@ -492,27 +501,38 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
                 lines.append(f"**`lobby_institution`** (target: {target})")
                 lines.append("")
                 lines.append(
-                    f"Cost: {cap_cost:.1f} capital + {inf_cost} influence (flat). "
-                    f"Records `pending_macro_lobby = \"{target}\"` — value nudge applied in Phase 5a."
+                    f"Cost: {cap_cost:.1f} capital + {inf_cost:.0f} influence. "
+                    f"Records `pending_macro_lobby = \"{target}\"` — "
+                    f"value nudge applied in Phase 5a before MacroJury."
                 )
                 lines.append("")
 
             # ── publish_narrative ────────────────────────────────────────────
             elif atype == "publish_narrative":
-                inf_cost = abs(effects.get("influence", 0))
-                lines.append(f"**`publish_narrative`**")
+                inf_cost = abs(effects.get("influence_spent", effects.get("influence", 0)))
+                target_name = effects.get("target", "?")
+                value_axis = effects.get("value_axis", "?")
+                actual_delta = effects.get("actual_delta", "?")
+                lines.append(f"**`publish_narrative`** (target: {target_name})")
                 lines.append("")
-                lines.append(f"Cost: {inf_cost} influence (flat).")
+                lines.append(
+                    f"Cost: {inf_cost:.0f} influence. "
+                    f"Shifted `{value_axis}` by {actual_delta} on {target_name}."
+                )
                 lines.append("")
 
             # ── diminish_competitor ──────────────────────────────────────────
             elif atype == "diminish_competitor":
                 cap_cost = abs(effects.get("capital", 0))
-                inf_cost = abs(effects.get("influence", 0))
-                target = action.get("target", "?")
+                inf_cost = abs(effects.get("influence_spent", effects.get("influence", 0)))
+                target = effects.get("target", action.get("target", "?"))
+                actual_delta = effects.get("target_influence_delta", "?")
                 lines.append(f"**`diminish_competitor`** (target: {target})")
                 lines.append("")
-                lines.append(f"Cost: {cap_cost:.1f} capital + {inf_cost:.1f} influence.")
+                lines.append(
+                    f"Cost: {cap_cost:.1f} capital + {inf_cost:.1f} influence. "
+                    f"Target influence change: {actual_delta}."
+                )
                 lines.append("")
 
     # A2A section
@@ -520,16 +540,24 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
         lines.append("### A2A Messages Sent This Turn")
         lines.append("")
         lines.append(
-            "Messages are logged and delivered to recipients at the start of the next turn. "
+            "Messages are delivered to recipients at the start of the next turn. "
             "They do not affect resources this turn."
         )
         lines.append("")
         for m in a2a_msgs:
             tokens = m.get("turn_tokens_used", "?")
-            lines.append(f"- **{m['sender']} → {m['recipient']}** *(~{tokens} tokens):* \"{m['content']}\"")
+            lines.append(
+                f"- **{m['sender']} → {m['recipient']}** *(~{tokens} tokens):* \"{m['content']}\""
+            )
         lines.append("")
 
-    # Flush
+    # Flush invest_capital gains
+    # Compute market demand profits first so we can correct the pre-flush capital.
+    market_profits = {}
+    for entry in actor_phase:
+        _, _, profit = compute_market_demand(entry["snapshot_after"])
+        market_profits[entry["actor"]] = profit
+
     if invest_pending:
         lines.append("### Flush Deferred `invest_capital` Gains")
         lines.append("")
@@ -543,50 +571,95 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs):
                 continue
             pending = invest_pending[actor]
             snap_cap = entry["snapshot_after"]["capital"]
-            # pre-flush capital = final capital minus the pending gain that was credited
-            pre_flush_cap = round(snap_cap - pending, 2)
+            profit = market_profits.get(actor, 0)
+            # snapshot_after = post-flush + post-market-demand, so:
+            #   pre_flush = snap_cap - pending - market_profit
+            pre_flush_cap = round(snap_cap - pending - profit, 2)
+            post_flush_cap = round(pre_flush_cap + pending, 2)
             lines.append(
-                f"| {actor} | {pre_flush_cap:.2f} | +{pending:.2f} | **{snap_cap:.2f}** |"
+                f"| {actor} | {pre_flush_cap:.2f} | +{pending:.2f} | **{post_flush_cap:.2f}** |"
             )
-        no_invest = [e["actor"] for e in actor_phase if e.get("executed_actions") and e["actor"] not in invest_pending]
+        no_invest = [
+            e["actor"] for e in actor_phase
+            if e.get("executed_actions") and e["actor"] not in invest_pending
+        ]
         if no_invest:
             lines.append("")
-            lines.append(f"{', '.join(no_invest)} had no `invest_capital` action this turn; no flush.")
+            lines.append(f"{', '.join(no_invest)} had no `invest_capital` action this turn.")
         lines.append("")
+
+    # Market demand capital gains
+    lines.append("### Market Demand & Capital Gains")
+    lines.append("")
+    lines.append(
+        "After the invest\\_capital flush, automated market-demand profit is calculated for every actor:"
+    )
+    lines.append("")
+    lines.append("```")
+    lines.append("demand     = influence × 0.5")
+    lines.append("met_demand = min(demand, compute)")
+    lines.append("profit     = met_demand × 0.5")
+    lines.append("```")
+    lines.append("")
+    lines.append(
+        "| Actor | Influence | Compute | demand | met\\_demand | profit | Capital after profit |"
+    )
+    lines.append(
+        "|-------|----------:|--------:|-------:|------------:|-------:|--------------------:|"
+    )
+    for entry in actor_phase:
+        actor = entry["actor"]
+        snap = entry["snapshot_after"]
+        inf = snap["influence"]
+        comp = snap["compute"]
+        demand, met, profit = compute_market_demand(snap)
+        cap_after = snap["capital"]
+        cap_before = round(cap_after - profit, 2)
+        met_str = f"min({demand:.1f}, {comp:.1f}) = **{met:.1f}**"
+        profit_str = f"{met:.1f} × 0.5 = **{profit:.2f}**"
+        lines.append(
+            f"| {actor} | {inf:.1f} | {comp:.1f} | {demand:.1f} | {met_str} | "
+            f"{profit_str} | {cap_before:.2f} + {profit:.2f} = **{cap_after:.2f}** |"
+        )
+    lines.append("")
 
     # Post-execution snapshot
     lines.append("### Post-Execution Snapshot")
     lines.append("")
-    lines.append("**Particular actors:**")
+    lines.append("**Particular actors (after invest\\_capital flush and market demand profit):**")
     lines.append("")
     lines.append("| Actor | Compute | Capital | Influence |")
     lines.append("|-------|--------:|--------:|----------:|")
-    total_after = 0.0
     for entry in actor_phase:
         snap = entry["snapshot_after"]
-        total_after += snap["compute"]
         lines.append(
-            f"| {entry['actor']} | {snap['compute']:.4f} | {snap['capital']:.2f} | {snap['influence']:.1f} |"
+            f"| {entry['actor']} | {snap['compute']:.1f} | {snap['capital']:.2f} | {snap['influence']:.1f} |"
         )
     lines.append("")
-    compute_parts_str = " + ".join(f"{e['snapshot_after']['compute']:.4f}" for e in actor_phase)
-    lines.append(f"Global micro compute: {compute_parts_str} = **{total_after:.2f}** ✓")
-    lines.append("")
 
-    lines.append("**Macro states (unchanged by actor actions this turn):**")
+    # Macro state table: show post-Phase-0 compute if available, else pre-Phase-0
+    macro_display = {}
+    for name, s in pre_macro.items():
+        macro_display[name] = dict(s)
+        if post_phase0_macro and name in post_phase0_macro:
+            macro_display[name]["compute"] = post_phase0_macro[name]
+
+    lines.append("**Macro states (post-Phase-0 growth; unchanged by actor actions):**")
     lines.append("")
-    lines.append("| State | Compute | Capital | Influence | SCR |")
-    lines.append("|-------|--------:|--------:|----------:|----:|")
-    for name in sorted(pre_macro):
-        s = pre_macro[name]
+    lines.append(r"| State | Compute | Capital | Influence | SCR | infra\_buildout |")
+    lines.append("|-------|--------:|--------:|----------:|----:|----------------:|")
+    for name in sorted(macro_display):
+        s = macro_display[name]
+        ib = s.get("infrastructure_buildout", "?")
         lines.append(
             f"| {name} | {s['compute']:.1f} | {s['capital']:.1f} | "
-            f"{s['influence']:.1f} | {int(s['supply_chain_robustness'])} |"
+            f"{s['influence']:.1f} | {int(s['supply_chain_robustness'])} | {ib} |"
         )
     lines.append("")
     lines.append(
-        "> Macro resources only change through Phase 0 events. "
-        "The MacroJury (Phase 5b) updates macro **value axes** only."
+        "> The MacroJury (Phase 5b) updates macro **value axes** only — not resources. "
+        "An `accelerate_infrastructure` action this turn would have already increased the "
+        "parent state's `infrastructure_buildout`, taking effect from next Phase 0 onward."
     )
     lines.append("")
     return lines
@@ -764,28 +837,68 @@ def sec_phase5b(macro_phase, lobbies):
     return lines
 
 
-def sec_phase6(actor_phase, scores, fw, ow, pre_micro):
+def sec_phase6(actor_phase, scores, fw, ow, pre_micro, pre_macro,
+               post_phase0_macro=None, t0_macro=None):
+    """
+    post_phase0_macro: {state_name: compute} — used for current-turn cap normalization.
+    t0_macro: {state_name: compute} — used for t=0 baseline cap normalization.
+    Both default to pre_macro if not provided.
+    """
+    if post_phase0_macro is None:
+        post_phase0_macro = {n: s["compute"] for n, s in pre_macro.items()}
+    if t0_macro is None:
+        t0_macro = {n: s["compute"] for n, s in pre_macro.items()}
+
+    def get_cap(parent_state, macro_compute_dict):
+        frac = NATIONAL_CAP_FRACS.get(parent_state)
+        comp = macro_compute_dict.get(parent_state)
+        if frac and comp:
+            return comp * frac
+        return None
+
     lines = []
     lines.append("## Phase 6 — Scoring")
     lines.append("")
 
-    fw_disp = f"{fw['compute']}×Compute + {fw['capital']}×Capital + {fw['influence']}×Influence"
     lines.append("### Formula Scores")
     lines.append("")
+    lines.append(
+        "Compute is normalized against each actor's national compute cap "
+        "(post-Phase-0 caps) before entering the formula:"
+    )
+    lines.append("")
     lines.append("```")
-    lines.append(f"formula_score = {fw_disp}")
+    lines.append("Normalized_Compute = (Actor's Compute / National Cap) × 100")
+    lines.append(
+        f"formula_score      = {fw['compute']} × Normalized_Compute "
+        f"+ {fw['capital']} × Capital + {fw['influence']} × Influence"
+    )
     lines.append("```")
     lines.append("")
-    lines.append("| Actor | Compute | Capital | Influence | Formula Score |")
-    lines.append("|-------|--------:|--------:|----------:|--------------:|")
+    lines.append(
+        "| Actor | Compute | National Cap | Normalized\\_Compute | Capital | Influence | Formula Score |"
+    )
+    lines.append(
+        "|-------|--------:|-------------:|--------------------:|--------:|----------:|--------------:|"
+    )
     for entry in actor_phase:
         actor = entry["actor"]
+        ps = entry.get("parent_state", "")
         snap = entry["snapshot_after"]
-        c, k, i = snap["compute"], snap["capital"], snap["influence"]
+        raw_c = snap["compute"]
+        k = snap["capital"]
+        i = snap["influence"]
+        cap = get_cap(ps, post_phase0_macro)
+        norm_c = (raw_c / cap) * 100 if cap else raw_c
         f = scores["per_actor"][actor]["formula"]
+        cap_str = f"{cap:.1f}" if cap else "N/A"
+        norm_str = f"{raw_c:.1f}/{cap_str}×100 = **{norm_c:.2f}**"
+        formula_str = (
+            f"{fw['compute']}×{norm_c:.2f} + {fw['capital']}×{k:.2f} "
+            f"+ {fw['influence']}×{i:.1f} = **{f}**"
+        )
         lines.append(
-            f"| {actor} | {c:.4f} | {k:.2f} | {i:.1f} | "
-            f"{fw['compute']}×{c:.4f} + {fw['capital']}×{k:.2f} + {fw['influence']}×{i:.1f} = **{f}** |"
+            f"| {actor} | {raw_c:.1f} | {cap_str} | {norm_str} | {k:.2f} | {i:.1f} | {formula_str} |"
         )
     lines.append("")
 
@@ -813,22 +926,39 @@ def sec_phase6(actor_phase, scores, fw, ow, pre_micro):
 
     lines.append("### Relative Performance vs. t=0 Baseline")
     lines.append("")
+    t0_cap_desc = " / ".join(
+        f"{n}: {t0_macro[n]:.0f}×{NATIONAL_CAP_FRACS[n]:.2f}={t0_macro[n]*NATIONAL_CAP_FRACS[n]:.0f}"
+        for n in sorted(t0_macro) if n in NATIONAL_CAP_FRACS
+    )
     lines.append(
-        "Baseline scores are computed once from starting values before the first turn, "
-        "with alignment defaulted to 50 for all actors."
+        f"Baseline scores use t=0 starting values with alignment defaulted to 50. "
+        f"t=0 caps: {t0_cap_desc}."
     )
     lines.append("")
-    lines.append("| Actor | Baseline Formula | Baseline Overall | End-of-Year Overall | Delta |")
-    lines.append("|-------|----------------:|-----------------:|--------------------:|------:|")
+    lines.append(
+        "| Actor | Baseline Norm. Compute | Baseline Formula | Baseline Overall | "
+        "End-of-Year Overall | Delta |"
+    )
+    lines.append(
+        "|-------|----------------------:|-----------------:|-----------------:|"
+        "--------------------:|------:|"
+    )
     for entry in actor_phase:
         actor = entry["actor"]
+        ps = entry.get("parent_state", "")
         pre = pre_micro.get(actor, {})
-        bf = formula_score(pre, fw)
+        cap = get_cap(ps, t0_macro)
+        raw_c = pre.get("compute", 0)
+        norm_c = (raw_c / cap) * 100 if cap else raw_c
+        norm_str = f"{raw_c:.0f}/{cap:.0f}×100 = {norm_c:.2f}" if cap else str(raw_c)
+        bf = formula_score(pre, fw, national_cap=cap)
         bo = overall_score_val(bf, 50.0, ow)
         end_o = scores["per_actor"][actor]["overall"]
-        delta = scores["relative"].get(actor, end_o - bo)
+        delta = scores["relative"].get(actor, round(end_o - bo, 2))
         sign = "+" if isinstance(delta, (int, float)) and delta >= 0 else ""
-        lines.append(f"| {actor} | {bf} | {bo} | {end_o} | **{sign}{delta}** |")
+        lines.append(
+            f"| {actor} | {norm_str} | {bf} | {bo} | {end_o} | **{sign}{delta}** |"
+        )
     lines.append("")
     return lines
 
@@ -844,7 +974,6 @@ def generate_turn_md(year_data, full_run, a2a_msgs, pre_macro, pre_micro, run_na
     raw_ow = full_run.get("overall_weights", {})
     ow = {
         "formula": raw_ow.get("formula", 0.5),
-        # Handle old 'vibe' key alongside new 'alignment' key
         "alignment": raw_ow.get("alignment", raw_ow.get("vibe", 0.5)),
     }
     jury_models = full_run.get("jury_models", DEFAULT_JURY_MODELS)
@@ -854,7 +983,11 @@ def generate_turn_md(year_data, full_run, a2a_msgs, pre_macro, pre_micro, run_na
     grand_jury = year_data["grand_jury"]
     scores = year_data["scores"]
     events = year_data.get("events", [])
+    macro_growth = year_data.get("macro_growth", [])
     lobbies = detect_lobby_actions(actor_phase)
+
+    # Build post-Phase-0 compute lookup: {state_name: compute_after_growth}
+    post_phase0_macro = {g["state"]: g["after"] for g in macro_growth}
 
     sections = []
 
@@ -871,13 +1004,13 @@ def generate_turn_md(year_data, full_run, a2a_msgs, pre_macro, pre_micro, run_na
 
     sections.append(sec_world_state(year, pre_macro, pre_micro, actor_phase))
     sections.append(["---", ""])
-    sections.append(sec_phase0(scenario, events))
+    sections.append(sec_phase0(scenario, events, macro_growth))
     sections.append(["---", ""])
     sections.append(sec_phase1(actor_phase, a2a_msgs))
     sections.append(["---", ""])
     sections.append(sec_phase2(actor_phase, jury_models))
     sections.append(["---", ""])
-    sections.append(sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs))
+    sections.append(sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro))
     sections.append(["---", ""])
     sections.append(sec_phase4(grand_jury, actor_phase))
     sections.append(["---", ""])
@@ -885,7 +1018,11 @@ def generate_turn_md(year_data, full_run, a2a_msgs, pre_macro, pre_micro, run_na
     sections.append(["---", ""])
     sections.append(sec_phase5b(macro_phase, lobbies))
     sections.append(["---", ""])
-    sections.append(sec_phase6(actor_phase, scores, fw, ow, pre_micro))
+    sections.append(sec_phase6(
+        actor_phase, scores, fw, ow, pre_micro, pre_macro,
+        post_phase0_macro=post_phase0_macro,
+        t0_macro={n: s["compute"] for n, s in pre_macro.items()},
+    ))
 
     all_lines = []
     for section in sections:
@@ -906,7 +1043,13 @@ def main():
         if os.path.isdir(os.path.join(LOGS_DIR, d))
     )
 
+    # Allow filtering to a specific run via CLI arg
+    target = sys.argv[1] if len(sys.argv) > 1 else None
+
     for run_name in run_dirs:
+        if target and run_name != target:
+            continue
+
         run_dir = os.path.join(LOGS_DIR, run_name)
 
         full_run_path = next(
