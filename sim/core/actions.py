@@ -128,20 +128,11 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         cost = _compute_acquisition_cost(amount, scr)
         if actor.capital < max(MIN_ACTION_COST, cost):
             return f"Insufficient capital ({actor.capital:.1f}) for compute acquisition (cost {cost:.1f})"
-
-        # Check national aggregate cap (post-Phase-0 macro compute is the reference)
-        cap_frac = NATIONAL_COMPUTE_CAPS.get(actor.parent_state)
-        if cap_frac is not None and parent_macro is not None:
-            current_national = sum(
-                a.compute for a in all_micro_agents if a.parent_state == actor.parent_state
-            )
-            cap = parent_macro.compute * cap_frac
-            if current_national + amount > cap:
-                return (
-                    f"National aggregate compute cap reached "
-                    f"({current_national:.1f} + {amount:.1f} > "
-                    f"{parent_macro.compute:.1f} × {cap_frac} = {cap:.1f})"
-                )
+        # NOTE: national aggregate cap is NOT checked here.
+        # Simultaneous requests that collectively exceed headroom are resolved via
+        # proportional proration at execution time (engine._compute_compute_proration).
+        # Rejecting individual actors for a cumulative breach they cannot know about
+        # would be unfair; the engine scales everyone down automatically instead.
 
     elif action_type == ACTION_ACCELERATE_INFRASTRUCTURE:
         if actor.capital < max(MIN_ACTION_COST, ACCELERATE_CAPITAL_COST):
@@ -323,6 +314,184 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         logger.info(f"    {actor.name}: lobby_institution targeting {actor.parent_state}")
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Programmatic pre-check (engine calls this before LLM jury review)
+# ---------------------------------------------------------------------------
+
+def programmatic_check_actions(
+    proposed_actions: List[Dict[str, Any]],
+    actor,               # MicroAgent
+    parent_macro,        # MacroAgent | None
+) -> List[str]:
+    """
+    Fast mechanical validation of proposed_actions before the LLM jury is invoked.
+    Returns a (possibly empty) list of human-readable error strings.
+
+    Checks:
+      - Action count ≤ MAX_ACTIONS_PER_TURN
+      - Each action_type is in VALID_ACTIONS
+      - Required fields present for each action type
+      - Per-action compute limit (≤ MAX_COMPUTE_PER_TURN)
+      - Sequential capital/influence sufficiency (simulated in order)
+
+    Does NOT check the national aggregate compute cap — simultaneous requests
+    that collectively exceed headroom are handled by proportional proration at
+    execution time, not rejected here.
+    """
+    errors: List[str] = []
+
+    if len(proposed_actions) > MAX_ACTIONS_PER_TURN:
+        errors.append(
+            f"Too many actions: {len(proposed_actions)} > {MAX_ACTIONS_PER_TURN} allowed"
+        )
+
+    scr = parent_macro.supply_chain_robustness if parent_macro else 50.0
+    # Simulate resource spend in order to detect cascading shortfalls
+    sim_capital   = float(actor.capital)
+    sim_influence = float(actor.influence)
+
+    for idx, action in enumerate(proposed_actions[:MAX_ACTIONS_PER_TURN]):
+        atype  = action.get("action_type", "")
+        prefix = f"Action {idx + 1} ({atype!r})"
+
+        if atype not in VALID_ACTIONS:
+            errors.append(f"{prefix}: unknown action type — valid types are {sorted(VALID_ACTIONS)}")
+            continue  # can't do cost simulation for unknown type
+
+        # Parse amount safely
+        raw_amount = action.get("amount")
+        try:
+            amount = float(raw_amount) if raw_amount is not None else 0.0
+        except (TypeError, ValueError):
+            errors.append(f"{prefix}: 'amount' must be a number, got {raw_amount!r}")
+            continue
+
+        # --- Per-action checks ---
+        if atype == ACTION_ACQUIRE_COMPUTE:
+            if amount <= 0:
+                errors.append(f"{prefix}: 'amount' must be > 0")
+            elif amount > MAX_COMPUTE_PER_TURN:
+                errors.append(
+                    f"{prefix}: amount {amount} exceeds per-turn limit of {MAX_COMPUTE_PER_TURN}"
+                )
+            else:
+                cost = _compute_acquisition_cost(amount, scr)
+                if sim_capital < cost:
+                    errors.append(
+                        f"{prefix}: insufficient capital ({sim_capital:.2f}) "
+                        f"for {amount} compute (cost {cost:.2f})"
+                    )
+                else:
+                    sim_capital -= cost
+
+        elif atype == ACTION_ACCELERATE_INFRASTRUCTURE:
+            # Flat-cost; amount field is not used
+            if sim_capital < ACCELERATE_CAPITAL_COST:
+                errors.append(
+                    f"{prefix}: insufficient capital ({sim_capital:.2f}), "
+                    f"need {ACCELERATE_CAPITAL_COST:.0f}"
+                )
+            elif sim_influence < ACCELERATE_INFLUENCE_COST:
+                errors.append(
+                    f"{prefix}: insufficient influence ({sim_influence:.2f}), "
+                    f"need {ACCELERATE_INFLUENCE_COST}"
+                )
+            else:
+                sim_capital   -= ACCELERATE_CAPITAL_COST
+                sim_influence -= ACCELERATE_INFLUENCE_COST
+
+        elif atype == ACTION_INVEST_CAPITAL:
+            if amount <= 0:
+                errors.append(f"{prefix}: 'amount' must be > 0")
+            elif sim_capital < amount:
+                errors.append(
+                    f"{prefix}: insufficient capital ({sim_capital:.2f}) to invest {amount:.2f}"
+                )
+            else:
+                sim_capital -= amount
+
+        elif atype == ACTION_BUILD_INFLUENCE:
+            if amount <= 0:
+                errors.append(f"{prefix}: 'amount' must be > 0")
+            else:
+                cost = amount * INFLUENCE_BUILD_COST
+                if sim_capital < cost:
+                    errors.append(
+                        f"{prefix}: insufficient capital ({sim_capital:.2f}) "
+                        f"to buy {amount:.1f} influence (cost {cost:.2f})"
+                    )
+                else:
+                    sim_capital -= cost
+
+        elif atype == ACTION_PUBLISH_NARRATIVE:
+            missing = [
+                f for f in ("target", "value_axis", "value_delta")
+                if not action.get(f)
+            ]
+            if missing:
+                errors.append(f"{prefix}: missing required fields: {missing}")
+            else:
+                try:
+                    delta = int(action["value_delta"])
+                    from .agents import MAX_VALUE_OVERRIDE_PER_TURN
+                    if abs(delta) > MAX_VALUE_OVERRIDE_PER_TURN:
+                        errors.append(
+                            f"{prefix}: value_delta {delta} exceeds "
+                            f"±{MAX_VALUE_OVERRIDE_PER_TURN} limit"
+                        )
+                except (TypeError, ValueError):
+                    errors.append(
+                        f"{prefix}: value_delta {action.get('value_delta')!r} is not an integer"
+                    )
+            if sim_influence < NARRATIVE_INFLUENCE_COST:
+                errors.append(
+                    f"{prefix}: insufficient influence ({sim_influence:.2f}), "
+                    f"need {NARRATIVE_INFLUENCE_COST}"
+                )
+            else:
+                sim_influence -= NARRATIVE_INFLUENCE_COST
+
+        elif atype == ACTION_DIMINISH_COMPETITOR:
+            if amount <= 0:
+                errors.append(f"{prefix}: 'amount' must be > 0")
+            if not action.get("target"):
+                errors.append(f"{prefix}: missing required field 'target'")
+            if amount > 0:
+                cap_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
+                inf_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
+                if sim_capital < cap_cost:
+                    errors.append(
+                        f"{prefix}: insufficient capital ({sim_capital:.2f}) "
+                        f"for {amount:.1f} pts (cost {cap_cost:.2f})"
+                    )
+                elif sim_influence < inf_cost:
+                    errors.append(
+                        f"{prefix}: insufficient influence ({sim_influence:.2f}) "
+                        f"for {amount:.1f} pts (cost {inf_cost:.2f})"
+                    )
+                else:
+                    sim_capital   -= cap_cost
+                    sim_influence -= inf_cost
+
+        elif atype == ACTION_LOBBY_INSTITUTION:
+            # Flat-cost; amount field is not used
+            if sim_capital < LOBBY_CAPITAL_COST:
+                errors.append(
+                    f"{prefix}: insufficient capital ({sim_capital:.2f}), "
+                    f"need {LOBBY_CAPITAL_COST:.0f}"
+                )
+            elif sim_influence < LOBBY_INFLUENCE_COST:
+                errors.append(
+                    f"{prefix}: insufficient influence ({sim_influence:.2f}), "
+                    f"need {LOBBY_INFLUENCE_COST}"
+                )
+            else:
+                sim_capital   -= LOBBY_CAPITAL_COST
+                sim_influence -= LOBBY_INFLUENCE_COST
+
+    return errors
 
 
 # ---------------------------------------------------------------------------

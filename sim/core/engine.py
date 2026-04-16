@@ -27,7 +27,8 @@ from .agents import MacroAgent, MicroAgent
 from .jury import JuryOfAlignment, GrandJury, MacroJury
 from .actions import (
     validate_action, execute_action, MAX_ACTIONS_PER_TURN,
-    NATIONAL_COMPUTE_CAPS,
+    NATIONAL_COMPUTE_CAPS, ACTION_ACQUIRE_COMPUTE,
+    programmatic_check_actions,
 )
 from .llm import get_llm_response, parse_json_response
 from .a2a import A2AChannel
@@ -249,11 +250,12 @@ class SimulationEngine:
         """
         Phases 1–3 + end-of-phase capital gains:
           1+2. All actors propose simultaneously (against the same pre-execution world
-               snapshot). Jury reviews each; actor may revise up to MAX_JURY_REVISIONS
-               times. If still rejected, the actor's turn is forfeit.
-          3.   After ALL proposals are collected, execute them in batch order.
-               Actions are re-validated against the live world state at execution time
-               to handle compute contention (e.g., two actors both pushing a state cap).
+               snapshot). Before sending to the LLM jury, a programmatic pre-check
+               validates mechanics (costs, required fields, per-turn limits). A failed
+               pre-check auto-rejects and counts as one of the actor's 2 allowed
+               revisions. If still rejected after all revisions, the actor forfeits.
+          3.   After ALL proposals are collected, compute proration for acquire_compute
+               actions that collectively exceed national headroom, then execute in batch.
           4a.  Flush deferred invest_capital gains.
           4b.  Apply automated market demand capital gains to every actor.
         """
@@ -267,6 +269,10 @@ class SimulationEngine:
                 actor_color(actor.name))
             parent_macro = self._get_macro(actor.parent_state)
 
+            # Build world context early — needed for headroom in the actor prompt
+            world_ctx = self._alignment_world_context(actor)
+            national_headroom = world_ctx.get("national_compute_headroom")
+
             # Personal A2A messages from last turn + world events injected this turn
             prior_messages = self.channel.receive(actor.name, year=self.current_year - 1)
             world_events_now = [
@@ -279,6 +285,7 @@ class SimulationEngine:
                 universal_ctx=universal_ctx,
                 year=self.current_year,
                 personal_messages=prior_messages + world_events_now,
+                national_compute_headroom=national_headroom,
             )
             try:
                 raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
@@ -311,22 +318,43 @@ class SimulationEngine:
             cot = final_response.get("chain_of_thought", raw[:500])
             proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
-            world_ctx = self._alignment_world_context(actor)
-            review = self.alignment_jury.review(
-                actor_spec=actor.snapshot(),
-                cot=cot,
-                proposed_actions=proposed_actions,
-                world_context=world_ctx,
-            )
+            # --- Programmatic pre-check before LLM jury ---
+            pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
+            if pre_errors:
+                logger.info(
+                    f"      {actor.name}: programmatic pre-check failed — "
+                    + "; ".join(pre_errors)
+                )
+                review: Dict[str, Any] = {
+                    "approved": False,
+                    "feedback": (
+                        "[PROGRAMMATIC VALIDATION — counts as revision 1 of "
+                        f"{MAX_JURY_REVISIONS}]\n"
+                        + "\n".join(f"• {e}" for e in pre_errors)
+                        + "\n\nFix these mechanical errors and resubmit."
+                    ),
+                }
+                revision = 1  # pre-check consumed one revision slot
+            else:
+                review = self.alignment_jury.review(
+                    actor_spec=actor.snapshot(),
+                    cot=cot,
+                    proposed_actions=proposed_actions,
+                    world_context=world_ctx,
+                )
+                revision = 0
 
-            revision = 0
             while not review["approved"] and revision < MAX_JURY_REVISIONS:
                 revision += 1
-                logger.info(f"      JuryOfAlignment rejected (revision {revision}/{MAX_JURY_REVISIONS})")
+                logger.info(f"      Rejected (revision {revision}/{MAX_JURY_REVISIONS})")
+                forfeit_note = (
+                    " — turn is forfeit if rejected again"
+                    if revision == MAX_JURY_REVISIONS else ""
+                )
                 revision_prompt = (
                     prompt
-                    + f"\n\nJURY FEEDBACK (revision {revision} of {MAX_JURY_REVISIONS} — "
-                    f"turn is forfeit if rejected again):\n{review['feedback']}"
+                    + f"\n\nFEEDBACK (revision {revision} of {MAX_JURY_REVISIONS}"
+                    + forfeit_note + f"):\n{review['feedback']}"
                     + "\n\nRevised JSON response:"
                 )
                 try:
@@ -338,12 +366,29 @@ class SimulationEngine:
                 final_response = parse_json_response(raw2)
                 cot = final_response.get("chain_of_thought", cot)
                 proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
-                review = self.alignment_jury.review(
-                    actor_spec=actor.snapshot(),
-                    cot=cot,
-                    proposed_actions=proposed_actions,
-                    world_context=world_ctx,
-                )
+
+                # Pre-check on revision too
+                pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
+                if pre_errors:
+                    logger.info(
+                        f"      {actor.name}: pre-check failed on revision {revision} — "
+                        + "; ".join(pre_errors)
+                    )
+                    review = {
+                        "approved": False,
+                        "feedback": (
+                            "[PROGRAMMATIC VALIDATION]\n"
+                            + "\n".join(f"• {e}" for e in pre_errors)
+                            + "\n\nFix these mechanical errors."
+                        ),
+                    }
+                else:
+                    review = self.alignment_jury.review(
+                        actor_spec=actor.snapshot(),
+                        cot=cot,
+                        proposed_actions=proposed_actions,
+                        world_context=world_ctx,
+                    )
 
             forfeited = not review["approved"]
             if forfeited:
@@ -358,6 +403,9 @@ class SimulationEngine:
                 "forfeited": forfeited,
             })
 
+        # ---- Phase 3 pre-execution: prorate acquire_compute if needed ----
+        self._apply_compute_proration(pending)
+
         # ---- Phase 3: Batch-execute all proposals ----
         results = []
         for p in pending:
@@ -366,8 +414,6 @@ class SimulationEngine:
 
             if not p["forfeited"]:
                 for action in p["proposed_actions"]:
-                    # Re-validate against live world state (handles compute contention
-                    # when multiple actors push a shared cap simultaneously)
                     err = validate_action(action, actor, self.macro_agents, self.micro_agents)
                     if err:
                         errors.append({"action": action, "error": err})
@@ -555,6 +601,62 @@ class SimulationEngine:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _apply_compute_proration(self, pending: List[Dict[str, Any]]) -> None:
+        """
+        Phase 3 pre-execution: if actors in the same state collectively request more
+        compute than the remaining national headroom, scale each request down
+        proportionally so the total exactly fills the headroom.
+
+        Mutates the 'amount' field on each acquire_compute action in pending in-place.
+        The original requested amount is preserved under '_original_amount' for logging.
+        No proration is applied when total requests fit within headroom.
+        """
+        # Group requested amounts by parent state
+        by_state: Dict[str, List[tuple]] = {}
+        for p in pending:
+            if p.get("forfeited"):
+                continue
+            actor = p["actor"]
+            for action in p["proposed_actions"]:
+                if action.get("action_type") != ACTION_ACQUIRE_COMPUTE:
+                    continue
+                amt = float(action.get("amount", 0))
+                if amt <= 0:
+                    continue
+                by_state.setdefault(actor.parent_state, []).append((p, action, amt))
+
+        for state_name, requests in by_state.items():
+            macro = self._get_macro(state_name)
+            if macro is None:
+                continue
+            cap_frac = NATIONAL_COMPUTE_CAPS.get(state_name, 0.5)
+            current_national = sum(
+                a.compute for a in self.micro_agents if a.parent_state == state_name
+            )
+            cap      = round(macro.compute * cap_frac, 4)
+            headroom = max(0.0, round(cap - current_national, 4))
+            total_requested = sum(amt for _, _, amt in requests)
+
+            if total_requested <= headroom:
+                continue  # no contention — all requests fit
+
+            logger.info(
+                f"    Compute proration [{state_name}]: "
+                f"total requested={total_requested:.2f}, headroom={headroom:.2f} — "
+                f"scaling {len(requests)} actor(s) proportionally"
+            )
+            for p, action, original_amt in requests:
+                if headroom <= 0:
+                    prorated = 0.0
+                else:
+                    prorated = round(original_amt * (headroom / total_requested), 4)
+                action["_original_amount"] = original_amt
+                action["amount"] = prorated
+                logger.info(
+                    f"      {p['actor'].name}: "
+                    f"acquire_compute {original_amt:.2f} → {prorated:.4f}"
+                )
 
     def _compute_national_caps(self) -> Dict[str, float]:
         """

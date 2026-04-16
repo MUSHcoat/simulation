@@ -6,6 +6,15 @@ Micro-level prompt builder for particular actor action proposals.
 import json
 from typing import Any, Dict, List, Optional
 
+# Mirrors actions.py constants — kept here to avoid circular import
+_COMPUTE_BASE_COST      = 5.0
+_MAX_COMPUTE_PER_TURN   = 5.0
+_LOBBY_CAPITAL_COST     = 8.0
+_LOBBY_INFLUENCE_COST   = 5
+_ACCELERATE_CAPITAL_COST   = 10.0
+_ACCELERATE_INFLUENCE_COST = 5
+_NARRATIVE_INFLUENCE_COST  = 5
+
 
 def build_micro_action_prompt(
     actor: Any,
@@ -13,6 +22,7 @@ def build_micro_action_prompt(
     universal_ctx: str,
     year: int,
     personal_messages: List[Dict[str, Any]],
+    national_compute_headroom: Optional[float] = None,
 ) -> str:
     parts = [universal_ctx, ""]
 
@@ -31,11 +41,54 @@ def build_micro_action_prompt(
     parts.append(f"Role: {actor.narrative}")
     parts.append("")
     parts.append(
-        f"YOUR RESOURCES: compute={actor.compute:.1f}, "
-        f"capital={actor.capital:.1f}, influence={actor.influence:.1f}"
+        f"YOUR RESOURCES: compute={actor.compute:.2f}, "
+        f"capital={actor.capital:.2f}, influence={actor.influence:.2f}"
     )
     parts.append(f"YOUR VALUES (shift up to ±5/turn via publish_narrative): {json.dumps(actor.values)}")
     parts.append("")
+
+    # --- Pre-calculated math helpers ---
+    if parent_macro:
+        scr = parent_macro.supply_chain_robustness
+        cost_per_unit = round(_COMPUTE_BASE_COST * (1.0 + (100.0 - scr) / 100.0), 4)
+        max_by_capital = actor.capital / cost_per_unit if cost_per_unit > 0 else 0.0
+        max_by_turn    = _MAX_COMPUTE_PER_TURN
+        max_by_headroom = national_compute_headroom if national_compute_headroom is not None else float("inf")
+        max_compute = max(0.0, min(max_by_capital, max_by_turn, max_by_headroom))
+
+        parts.append("QUICK MATH (pre-calculated — use these exact numbers):")
+        parts.append(
+            f"  Compute cost rate : {cost_per_unit:.4f} capital per 1 compute unit "
+            f"(SCR={scr:.0f})"
+        )
+        if national_compute_headroom is not None:
+            parts.append(
+                f"  National headroom : {national_compute_headroom:.4f} compute units available "
+                f"in {parent_macro.name} before cap"
+            )
+        else:
+            parts.append("  National headroom : unknown (no cap data)")
+        parts.append(f"  Per-turn limit    : {max_by_turn:.0f} compute units")
+        parts.append(
+            f"  *** MAX compute you can request this turn: "
+            f"{max_compute:.4f} (= min of capital/{cost_per_unit:.4f}, "
+            f"headroom, per-turn limit) ***"
+        )
+        parts.append("")
+        parts.append("  Flat-cost reminders (NO 'amount' field for these):")
+        parts.append(
+            f"    lobby_institution       : {_LOBBY_CAPITAL_COST:.0f} capital + "
+            f"{_LOBBY_INFLUENCE_COST} influence (flat)"
+        )
+        parts.append(
+            f"    accelerate_infrastructure: {_ACCELERATE_CAPITAL_COST:.0f} capital + "
+            f"{_ACCELERATE_INFLUENCE_COST} influence (flat)"
+        )
+        parts.append(
+            f"    publish_narrative       : {_NARRATIVE_INFLUENCE_COST} influence (flat); "
+            f"needs target/value_axis/value_delta fields"
+        )
+        parts.append("")
 
     # --- Action history (last 2 turns, concise) ---
     if actor.history:
@@ -81,18 +134,21 @@ def build_micro_action_prompt(
         '  "chain_of_thought": "<reasoning>",\n'
         '  "actions": [\n'
         '    {\n'
-        '      "action_type": "acquire_compute|invest_capital|build_influence|publish_narrative|diminish_competitor|lobby_institution",\n'
-        '      "amount": <float>,\n'
-        '      "target": "<actor name, publish_narrative only>",\n'
-        '      "value_axis": "<axis name, publish_narrative only>",\n'
-        '      "value_delta": <int -5..+5, publish_narrative only>,\n'
+        '      "action_type": "<one of the 7 action types>",\n'
+        '      "amount": <float — ONLY for: acquire_compute, invest_capital, build_influence, diminish_competitor>,\n'
+        '      "target": "<actor name — ONLY for: publish_narrative (self or other), diminish_competitor>",\n'
+        '      "value_axis": "<axis name — ONLY for: publish_narrative>",\n'
+        '      "value_delta": <int -5..+5 — ONLY for: publish_narrative>,\n'
         '      "rationale": "<why>"\n'
         '    }\n'
         '  ],\n'
         '  "a2a_messages": [\n'
         '    {"recipient": "<specific actor name>", "content": "<message>"}\n'
         '  ]\n'
-        '}'
+        '}\n'
+        'IMPORTANT: lobby_institution and accelerate_infrastructure are FLAT-COST — '
+        'do NOT include an "amount" field for them. '
+        'publish_narrative MUST include "target", "value_axis", and "value_delta".'
     )
 
     return "\n".join(parts)

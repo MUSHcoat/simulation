@@ -93,7 +93,7 @@ The following hard constraints are enforced at all times and cannot be overridde
 | National aggregate cap | Combined Compute of all particular actors within a state may not exceed 50% (US) or 80% (China) of that state's current Macro Compute (checked after automatic macro growth each turn) |
 | Per-turn acquisition limit | A single actor cannot acquire more than 5 Compute points per turn |
 
-The national cap prevents domestic monopolization and is re-validated at execution time to handle simultaneous proposals that would collectively breach it.
+The national cap prevents domestic monopolization. When simultaneous proposals collectively exceed the remaining national headroom, the engine automatically scales each actor's acquisition down proportionally (pro-rata): each actor receives `requested × (headroom / total_requested)` and pays the correspondingly reduced cost. No actor is rejected solely for a cumulative cap breach they cannot individually prevent.
 
 **Capital guardrails:**
 
@@ -140,12 +140,12 @@ Each particular actor may take up to 2 actions per turn. All actions are validat
 | Action | Cost | Effect |
 | ------ | ---- | ------ |
 | `acquire_compute` | Capital (base 5/point × `(1 + (100 − SCR) / 100)`) | +Compute to self; no dilution of other actors |
-| `accelerate_infrastructure` | 10 Capital + 5 Influence | +3 Compute to parent macro state Infrastructure Buildout value. |
-| `invest_capital` | Capital (invested amount) | +Capital returned next turn with 10–20% gain (scales with capital level); ceiling 100 |
+| `accelerate_infrastructure` | **Flat:** 10 Capital + 5 Influence | +3 to parent macro state's `infrastructure_buildout` (increases per-turn compute growth from next Phase 0 onward). No `amount` field. |
+| `invest_capital` | Capital (= invested amount) | +Capital returned next turn with 10–20% gain (scales with capital level); ceiling 100 |
 | `build_influence` | 3 Capital per point | +Influence to self |
-| `publish_narrative` | 5 Influence | Shifts any actor's (including self) value on one axis by up to ±5 from their current value |
-| `diminish_competitor` | (2 Capital + 1 Influence) / point | -Influence to any actor |
-| `lobby_institution` | 8 Capital + 5 Influence | Deterministically nudges parent state values 1 point per axis toward the actor's values (applied before MacroJury deliberates) |
+| `publish_narrative` | **Flat:** 5 Influence | Shifts any actor's value on one axis by up to ±5; **target may be self or any other actor**. Requires `target`, `value_axis`, `value_delta` fields. No `amount` field. |
+| `diminish_competitor` | (2 Capital + 1 Influence) / point | −Influence to target actor |
+| `lobby_institution` | **Flat:** 8 Capital + 5 Influence | Deterministically nudges parent state values 1 point per axis toward the actor's values (applied before MacroJury deliberates). No `amount` field. |
 
 ### **5.2 Turn Structure**
 
@@ -155,9 +155,9 @@ Each year proceeds in the following order:
 
 **Phase 1 — Simultaneous proposals:** All particular actors produce chain-of-thought reasoning and propose actions. All proposals are made against the same frozen world snapshot; no execution happens during this phase.
 
-**Phase 2 — Jury of Alignment review:** A 3-model jury reviews each actor's CoT and proposed actions against their spec and the current world context (including national compute caps and headroom). If rejected, the actor may revise up to 2 times. If still rejected after 2 revisions, the turn is forfeited.
+**Phase 2 — Jury of Alignment review:** Before the LLM jury is invoked, the engine runs a programmatic pre-check on each actor's proposal (resource sufficiency, required fields, per-turn compute limit). A failed pre-check auto-rejects and counts as revision 1 of 2, returning a mechanical error message to the actor. For proposals that pass the pre-check, a 3-model jury reviews the CoT and proposed actions against the actor's spec and the current world context. The jury does **not** reject solely because an actor's `acquire_compute` request might exceed the national cap when combined with other actors' simultaneous requests — that is handled by proportional proration at execution time. If rejected, the actor may revise up to 2 times total (including any pre-check failure). If still rejected after all revisions, the turn is forfeited.
 
-**Phase 3 — Batch execution:** All approved proposals are executed in order. Actions are re-validated at execution time against the live world state (handles compute contention from simultaneous proposals). `invest_capital` gains are deferred — capital is deducted immediately, but the return is credited after all actors have executed.
+**Phase 3 — Batch execution:** Before executing, the engine computes whether actors in the same state collectively requested more compute than the remaining national headroom. If so, each actor's `acquire_compute` request is scaled down proportionally — every actor receives `requested × (headroom / total_requested)` and pays the proportionally lower cost. After proration, all proposals execute in order. `invest_capital` gains are deferred — capital is deducted immediately, but the return is credited after all actors have executed.
 
 After all approved proposals execute and deferred `invest_capital` gains are flushed, **automated market-demand capital gains** are calculated for every particular actor:
 

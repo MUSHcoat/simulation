@@ -263,23 +263,32 @@ ACTOR'S PROPOSED ACTIONS:
 
 ACTION COSTS (use these to verify sequential resource sufficiency):
   acquire_compute    Capital = 5 × amount × (1 + (100 − SCR) / 100)   [SCR is the parent state's supply_chain_robustness]
-  invest_capital     Capital deducted = amount  (returned next turn with 10–19% gain; does NOT count toward ceiling this turn)
+  invest_capital     Capital deducted = amount  (returned next turn with 10–20% gain; does NOT count toward ceiling this turn)
   build_influence    Capital = 3 × amount
-  publish_narrative  Influence = 5  (flat, regardless of amount)
+  publish_narrative  Influence = 5  (flat; NO amount field — requires target/value_axis/value_delta)
   diminish_competitor  Capital = 2 × amount  AND  Influence = 1 × amount
-  lobby_institution  Capital = 8  AND  Influence = 5  (flat; amount field ignored)
+  lobby_institution  Capital = 8  AND  Influence = 5  (flat; NO amount field)
+  accelerate_infrastructure  Capital = 10  AND  Influence = 5  (flat; NO amount field)
 
 IMPORTANT: actions execute sequentially. Verify that the actor's capital and influence
 remain non-negative after EACH action in order, not just in total.
+
+COMPUTE CAP NOTE: Do NOT reject an actor solely because their acquire_compute request,
+combined with other actors' requests, might exceed the national aggregate cap. Simultaneous
+requests that collectively exceed the remaining headroom are automatically scaled down
+proportionally (pro-rata) at execution time. Only reject if this individual actor's
+single request exceeds the per-turn limit of {MAX_COMPUTE_PER_TURN}, or if they lack the
+capital to afford their requested amount at the stated cost.
 
 Evaluate whether:
 1. Each action_type is from the discrete action set
 2. Resource costs are within the actor's current holdings (check sequentially)
 3. The actions are consistent with the actor's stated values
 4. Guardrails are respected:
-   - acquire_compute: amount ≤ {MAX_COMPUTE_PER_TURN} per turn AND national_total + amount ≤ national_compute_cap
+   - acquire_compute: amount ≤ {MAX_COMPUTE_PER_TURN} per turn (national cap handled by engine)
    - capital ceiling: {CAPITAL_CEILING}
    - max 2 actions per turn
+   - publish_narrative must include target, value_axis, value_delta fields
 
 Respond with JSON only:
 {{

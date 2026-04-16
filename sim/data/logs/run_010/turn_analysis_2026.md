@@ -356,6 +356,12 @@ profit     = met_demand × 0.5
 | Gemini (Google DeepMind) | 25.0 | 49.51 | 68.0 |
 | GPT (OpenAI) | 45.0 | 48.00 | 65.0 |
 
+**Value axis changes this turn:**
+
+| Actor | Axis | Before | After | Δ |
+|-------|------|-------:|------:|--:|
+| GPT (OpenAI) | democratic_tendency | 55 | 60 | +5 |
+
 **Macro states (post-Phase-0 growth; unchanged by actor actions):**
 
 | State | Compute | Capital | Influence | SCR | infra\_buildout |

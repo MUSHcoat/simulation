@@ -398,7 +398,7 @@ def sec_phase2(actor_phase, jury_models=None):
     return lines
 
 
-def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro=None):
+def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro=None, post_infra=None):
     """
     post_phase0_macro: dict of {state_name: compute_after_growth}.
     Used to show the correct (post-growth) macro compute in the snapshot table.
@@ -623,7 +623,7 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro=No
         )
     lines.append("")
 
-    # Post-execution snapshot
+    # Post-execution snapshot — resources
     lines.append("### Post-Execution Snapshot")
     lines.append("")
     lines.append("**Particular actors (after invest\\_capital flush and market demand profit):**")
@@ -637,12 +637,40 @@ def sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro=No
         )
     lines.append("")
 
+    # Value-axis changes (publish_narrative / diminish_competitor effects)
+    value_change_rows = []
+    for entry in actor_phase:
+        actor_name = entry["actor"]
+        start_vals = (pre_micro.get(actor_name) or {}).get("values", {})
+        end_vals   = entry["snapshot_after"].get("values", {})
+        for axis in ("time_horizon", "transparency_threshold", "risk_tolerance", "democratic_tendency"):
+            before = start_vals.get(axis)
+            after  = end_vals.get(axis)
+            if before is not None and after is not None and before != after:
+                delta = after - before
+                sign  = "+" if delta > 0 else ""
+                value_change_rows.append((actor_name, axis, before, after, f"{sign}{delta}"))
+
+    if value_change_rows:
+        lines.append("**Value axis changes this turn:**")
+        lines.append("")
+        lines.append("| Actor | Axis | Before | After | Δ |")
+        lines.append("|-------|------|-------:|------:|--:|")
+        for actor_name, axis, before, after, delta_str in value_change_rows:
+            lines.append(f"| {actor_name} | {axis} | {before} | {after} | {delta_str} |")
+        lines.append("")
+    else:
+        lines.append("> No value axis changes this turn.")
+        lines.append("")
+
     # Macro state table: show post-Phase-0 compute if available, else pre-Phase-0
     macro_display = {}
     for name, s in pre_macro.items():
         macro_display[name] = dict(s)
         if post_phase0_macro and name in post_phase0_macro:
             macro_display[name]["compute"] = post_phase0_macro[name]
+        if post_infra and name in post_infra:
+            macro_display[name]["infrastructure_buildout"] = post_infra[name]
 
     lines.append("**Macro states (post-Phase-0 growth; unchanged by actor actions):**")
     lines.append("")
@@ -742,14 +770,36 @@ def sec_phase5a(lobbies, actor_phase, pre_macro, macro_phase):
         lines.append("")
         return lines
 
+    axes = ["time_horizon", "transparency_threshold", "risk_tolerance", "democratic_tendency"]
+
+    # Simulate lobbies sequentially — each lobby sees the state as modified by all prior lobbies.
+    # This is necessary when multiple actors lobby the same state: the second actor's nudge
+    # is computed against the already-nudged values, not the start-of-turn values.
+    running_values = {
+        state_name: dict(s.get("values", {}))
+        for state_name, s in pre_macro.items()
+    }
+
     for actor_name, target_state in lobbies:
         actor_snap = next(e["snapshot_after"] for e in actor_phase if e["actor"] == actor_name)
         actor_vals = actor_snap.get("values", {})
-        pre_vals = pre_macro.get(target_state, {}).get("values", {})
-        post_vals = next(
-            (mp["before"].get("values", {}) for mp in macro_phase if mp["state"] == target_state),
-            {}
-        )
+
+        # pre_vals: state values entering THIS specific lobby (not start-of-turn)
+        pre_vals = dict(running_values.get(target_state, {}))
+
+        # Apply nudge: each axis moves 1 point toward actor's value
+        post_vals = dict(pre_vals)
+        for axis in axes:
+            pre_v = pre_vals.get(axis)
+            act_v = actor_vals.get(axis)
+            if isinstance(pre_v, (int, float)) and isinstance(act_v, (int, float)):
+                if act_v > pre_v:
+                    post_vals[axis] = pre_v + 1
+                elif act_v < pre_v:
+                    post_vals[axis] = pre_v - 1
+
+        # Advance running state for any subsequent lobby on this same target
+        running_values[target_state] = post_vals
 
         lines.append(
             f"**{actor_name}** executed `lobby_institution` on **{target_state}**. "
@@ -762,7 +812,6 @@ def sec_phase5a(lobbies, actor_phase, pre_macro, macro_phase):
         )
         lines.append("")
 
-        axes = ["time_horizon", "transparency_threshold", "risk_tolerance", "democratic_tendency"]
         lines.append(
             f"| Axis | {target_state} (pre-lobby) | {actor_name}'s value | Direction | {target_state} (post-lobby) |"
         )
@@ -1010,7 +1059,8 @@ def generate_turn_md(year_data, full_run, a2a_msgs, pre_macro, pre_micro, run_na
     sections.append(["---", ""])
     sections.append(sec_phase2(actor_phase, jury_models))
     sections.append(["---", ""])
-    sections.append(sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro))
+    post_infra = {mp["state"]: mp["before"].get("infrastructure_buildout") for mp in macro_phase}
+    sections.append(sec_phase3(actor_phase, pre_micro, pre_macro, a2a_msgs, post_phase0_macro, post_infra))
     sections.append(["---", ""])
     sections.append(sec_phase4(grand_jury, actor_phase))
     sections.append(["---", ""])
