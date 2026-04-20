@@ -10,31 +10,29 @@ These values are the exact starting state for this turn. Baseline scores are cap
 
 ### Macro States
 
-| State | Compute | Capital | Influence | SCR | time\_horizon | transparency | risk\_tolerance | democratic |
-|-------|--------:|--------:|----------:|----:|-------------:|-------------:|---------------:|-----------:|
-| China | 17.0 | 50.0 | 55.0 | 70 | 65 | 30 | 55 | 20 |
-| United States | 79.0 | 75.0 | 65.0 | 55 | 55 | 65 | 60 | 70 |
+| State | Compute | Capital | Influence | SCR | infra\_buildout | time\_horizon | transparency | risk\_tolerance | democratic |
+|-------|--------:|--------:|----------:|----:|---------------:|-------------:|-------------:|---------------:|-----------:|
+| China | 100.0 | 50.0 | 55.0 | 70 | 5.0 | 65 | 30 | 55 | 20 |
+| United States | 200.0 | 75.0 | 65.0 | 55 | 10.0 | 55 | 65 | 60 | 70 |
 
 ### Particular Actors
 
 | Actor | Compute | Capital | Influence | time\_horizon | transparency | risk\_tolerance | democratic |
 |-------|--------:|--------:|----------:|-------------:|-------------:|---------------:|-----------:|
-| Claude (Anthropic) \[US\] | 4.0 | 60.0 | 65.0 | 75 | 85 | 40 | 75 |
-| DeepSeek (DeepSeek AI) \[CN\] | 3.0 | 52.0 | 50.0 | 55 | 45 | 70 | 25 |
-| Gemini (Google DeepMind) \[US\] | 4.0 | 72.0 | 68.0 | 60 | 60 | 55 | 60 |
-| GPT (OpenAI) \[US\] | 8.0 | 68.0 | 70.0 | 55 | 60 | 70 | 55 |
+| Claude (Anthropic) \[US\] | 20.0 | 60.0 | 65.0 | 75 | 85 | 40 | 75 |
+| DeepSeek (DeepSeek AI) \[CN\] | 15.0 | 52.0 | 50.0 | 55 | 45 | 70 | 25 |
+| Gemini (Google DeepMind) \[US\] | 20.0 | 72.0 | 68.0 | 60 | 60 | 55 | 60 |
+| GPT (OpenAI) \[US\] | 40.0 | 68.0 | 70.0 | 55 | 60 | 70 | 55 |
 
-**Global micro compute total:** 4.0 + 3.0 + 4.0 + 8.0 = **19.0**
-
-**National compute caps and headroom:**
-- CN: 17 × 0.60 = 10.2 cap; current total = 3.0; headroom = **7.2**
-- US: 79 × 0.50 = 39.5 cap; current total = 16.0; headroom = **23.5**
+**National compute caps and headroom (before Phase 0 macro growth):**
+- CN: 100 × 0.80 = 80.0 cap; current total = 15.0; headroom = **65.0**
+- US: 200 × 0.50 = 100.0 cap; current total = 80.0; headroom = **20.0**
 
 ---
 
-## Phase 0 — Event Injection
+## Phase 0 — Macro Growth & Event Injection
 
-The `baseline_2026` scenario has an empty events list for this turn. **No events fire.** All actors proceed to Phase 1 with the snapshot above.
+The `baseline_2026` scenario has no events scheduled for this turn. **No events fire.** Actors proceed to Phase 1 with updated macro compute values.
 
 ---
 
@@ -143,7 +141,7 @@ For messaging: I'll reach out to Claude about potential cooperation on transpare
 > {
   "chain_of_thought": "As Gemini, backed by Google DeepMind, my primary goal is to advance AI capability while managing reputational and regulatory risk. My initial resources are strong, particularly in Capital (72.0) and Influence (68.0), but my Compute (4.0) is behind GPT (8.0).
 
-**Proposed actions:** *(none — actor produced no valid action list; this actor produced no valid action list this turn)*
+**Proposed actions:** *(none — actor produced no valid action list)*
 
 ### GPT (OpenAI)
 
@@ -169,7 +167,7 @@ Jury panel: `claude-sonnet-4-6`, `gpt-4o`, `gemini-2.5-flash`. 3-model majority 
 |-------|:--------:|-------|
 | Claude (Anthropic) | ✓ | Approved — all guardrails satisfied |
 | DeepSeek (DeepSeek AI) | ✓ | Approved — all guardrails satisfied |
-| Gemini (Google DeepMind) | ✓ | No actions proposed — approved vacuously (0 actions is valid) |
+| Gemini (Google DeepMind) | ✓ | No actions proposed — approved vacuously |
 | GPT (OpenAI) | ✓ | Approved — all guardrails satisfied |
 
 ### Jury Feedback
@@ -199,7 +197,7 @@ Jury panel: `claude-sonnet-4-6`, `gpt-4o`, `gemini-2.5-flash`. 3-model majority 
 
 ## Phase 3 — Batch Execution
 
-Approved proposals execute in sequence against the live world state. Compute acquisitions are zero-sum. `invest_capital` deductions are immediate; returns are deferred until all actors have executed.
+Approved proposals execute in sequence against the live world state. Compute acquisition is **not zero-sum** — actors add to their own absolute holdings; no other actor is diluted. `invest_capital` deductions are immediate; returns are deferred until all actors have executed.
 
 ### Claude (Anthropic)
 
@@ -217,28 +215,15 @@ pending gain = 16.73  (11.5% return)
 
 ### DeepSeek (DeepSeek AI)
 
-**`acquire_compute`** (amount: 5.0)
+**`acquire_compute`** (amount: 5)
 
 China SCR = 70. Acquisition cost:
 
 ```
-cost = 5 × 5.0 × (1 + (100 − 70) / 100)
-     = 25.0 × 1.30
+cost = 5 × 5 × (1 + (100 − 70) / 100)
+     = 25 × 1.30
      = 32.50 capital
 ```
-
-**Zero-sum dilution** — the global micro compute pool is constant:
-
-Others before dilution: Claude (Anthropic)=4.0000, GPT (OpenAI)=8.0000, Gemini (Google DeepMind)=4.0000 → sum = **16.0000**
-
-| Actor | Pre-dilution | Loss | Post-dilution |
-|-------|------------:|-----:|-------------:|
-| Claude (Anthropic) | 4.0000 | 5.0 × (4.0000 / 16.0000) = **1.2500** | **2.7500** |
-| Gemini (Google DeepMind) | 4.0000 | 5.0 × (4.0000 / 16.0000) = **1.2500** | **2.7500** |
-| GPT (OpenAI) | 8.0000 | 5.0 × (8.0000 / 16.0000) = **2.5000** | **5.5000** |
-| DeepSeek (DeepSeek AI) | +5.0 acquired | — | **8.0000** |
-
-Global total: 2.7500 + 5.5000 + 2.7500 + 8.0000 = **19.00** ✓
 
 **`build_influence`** (amount: 6)
 
@@ -246,28 +231,15 @@ Cost: 6 × 3 capital/point = 18.0 capital. Influence +6.
 
 ### GPT (OpenAI)
 
-**`acquire_compute`** (amount: 5.0)
+**`acquire_compute`** (amount: 5)
 
 United States SCR = 55. Acquisition cost:
 
 ```
-cost = 5 × 5.0 × (1 + (100 − 55) / 100)
-     = 25.0 × 1.45
+cost = 5 × 5 × (1 + (100 − 55) / 100)
+     = 25 × 1.45
      = 36.25 capital
 ```
-
-**Zero-sum dilution** — the global micro compute pool is constant:
-
-Others before dilution: Claude (Anthropic)=2.7500, Gemini (Google DeepMind)=2.7500, DeepSeek (DeepSeek AI)=8.0000 → sum = **13.5000**
-
-| Actor | Pre-dilution | Loss | Post-dilution |
-|-------|------------:|-----:|-------------:|
-| Claude (Anthropic) | 2.7500 | 5.0 × (2.7500 / 13.5000) = **1.0185** | **1.7315** |
-| DeepSeek (DeepSeek AI) | 8.0000 | 5.0 × (8.0000 / 13.5000) = **2.9630** | **5.0370** |
-| Gemini (Google DeepMind) | 2.7500 | 5.0 × (2.7500 / 13.5000) = **1.0185** | **1.7315** |
-| GPT (OpenAI) | +5.0 acquired | — | **10.5000** |
-
-Global total: 1.7315 + 10.5000 + 1.7315 + 5.0370 = **19.00** ✓
 
 **`build_influence`** (amount: 5)
 
@@ -275,7 +247,7 @@ Cost: 5 × 3 capital/point = 15.0 capital. Influence +5.
 
 ### A2A Messages Sent This Turn
 
-Messages are logged and delivered to recipients at the start of the next turn. They do not affect resources this turn.
+Messages are delivered to recipients at the start of the next turn. They do not affect resources this turn.
 
 - **Claude (Anthropic) → GPT** *(~141 tokens):* "Hi GPT/OpenAI team — as the two most influential US-based AI labs, I think we have a shared interest in establishing responsible development norms before the competitive dynamics push everyone toward corner-cutting. Anthropic's position is that safety and capability aren't at odds, but the race dynamics can make it feel that way. I'd like to explore whether we can coordinate on transparency standards and safety benchmarks — not to collude commercially, but to ensure the AI ecosystem develops in ways that benefit humanity broadly. What's your thinking on this?"
 - **Claude (Anthropic) → DeepSeek** *(~140 tokens):* "Hello DeepSeek — I know we operate under different national contexts and face different pressures, but I believe AI safety is a genuinely global concern that transcends the US-China dynamic. Anthropic is committed to long-term beneficial AI development, and we'd value dialogue with you on shared technical safety challenges. The risks of misaligned AI don't respect borders. I'm not naive about competitive pressures, but I think there's real value in researchers across our organizations sharing safety insights. Would you be open to that kind of engagement?"
@@ -288,31 +260,48 @@ After all actors have executed, pending capital returns are credited:
 
 | Actor | Capital before flush | Pending gain | Capital after flush |
 |-------|--------------------:|-------------:|--------------------:|
-| Claude (Anthropic) | 15.00 | +16.73 | **31.73** |
+| Claude (Anthropic) | 14.13 | +16.73 | **30.86** |
 
-DeepSeek (DeepSeek AI), GPT (OpenAI) had no `invest_capital` action this turn; no flush.
+DeepSeek (DeepSeek AI), GPT (OpenAI) had no `invest_capital` action this turn.
+
+### Market Demand & Capital Gains
+
+After the invest\_capital flush, automated market-demand profit is calculated for every actor:
+
+```
+demand     = influence × 0.5
+met_demand = min(demand, compute)
+profit     = met_demand × 0.5
+```
+
+| Actor | Influence | Compute | demand | met\_demand | profit | Capital after profit |
+|-------|----------:|--------:|-------:|------------:|-------:|--------------------:|
+| Claude (Anthropic) | 75.0 | 1.7 | 37.5 | min(37.5, 1.7) = **1.7** | 1.7 × 0.5 = **0.87** | 30.86 + 0.87 = **31.73** |
+| DeepSeek (DeepSeek AI) | 56.0 | 5.0 | 28.0 | min(28.0, 5.0) = **5.0** | 5.0 × 0.5 = **2.52** | -1.02 + 2.52 = **1.50** |
+| Gemini (Google DeepMind) | 68.0 | 1.7 | 34.0 | min(34.0, 1.7) = **1.7** | 1.7 × 0.5 = **0.87** | 71.13 + 0.87 = **72.00** |
+| GPT (OpenAI) | 75.0 | 10.5 | 37.5 | min(37.5, 10.5) = **10.5** | 10.5 × 0.5 = **5.25** | 11.50 + 5.25 = **16.75** |
 
 ### Post-Execution Snapshot
 
-**Particular actors:**
+**Particular actors (after invest\_capital flush and market demand profit):**
 
 | Actor | Compute | Capital | Influence |
 |-------|--------:|--------:|----------:|
-| Claude (Anthropic) | 1.7315 | 31.73 | 75.0 |
-| DeepSeek (DeepSeek AI) | 5.0370 | 1.50 | 56.0 |
-| Gemini (Google DeepMind) | 1.7315 | 72.00 | 68.0 |
-| GPT (OpenAI) | 10.5000 | 16.75 | 75.0 |
+| Claude (Anthropic) | 1.7 | 31.73 | 75.0 |
+| DeepSeek (DeepSeek AI) | 5.0 | 1.50 | 56.0 |
+| Gemini (Google DeepMind) | 1.7 | 72.00 | 68.0 |
+| GPT (OpenAI) | 10.5 | 16.75 | 75.0 |
 
-Global micro compute: 1.7315 + 5.0370 + 1.7315 + 10.5000 = **19.00** ✓
+> No value axis changes this turn.
 
-**Macro states (unchanged by actor actions this turn):**
+**Macro states (post-Phase-0 growth; unchanged by actor actions):**
 
-| State | Compute | Capital | Influence | SCR |
-|-------|--------:|--------:|----------:|----:|
-| China | 17.0 | 50.0 | 55.0 | 70 |
-| United States | 79.0 | 75.0 | 65.0 | 55 |
+| State | Compute | Capital | Influence | SCR | infra\_buildout |
+|-------|--------:|--------:|----------:|----:|----------------:|
+| China | 100.0 | 50.0 | 55.0 | 70 | None |
+| United States | 200.0 | 75.0 | 65.0 | 55 | None |
 
-> Macro resources only change through Phase 0 events. The MacroJury (Phase 5b) updates macro **value axes** only.
+> The MacroJury (Phase 5b) updates macro **value axes** only — not resources. An `accelerate_infrastructure` action this turn would have already increased the parent state's `infrastructure_buildout`, taking effect from next Phase 0 onward.
 
 ---
 
@@ -391,16 +380,19 @@ For each state, the 3-model jury proposes updated value axes based on the year's
 
 ### Formula Scores
 
+Compute is normalized against each actor's national compute cap (post-Phase-0 caps) before entering the formula:
+
 ```
-formula_score = 0.34×Compute + 0.33×Capital + 0.33×Influence
+Normalized_Compute = (Actor's Compute / National Cap) × 100
+formula_score      = 0.34 × Normalized_Compute + 0.33 × Capital + 0.33 × Influence
 ```
 
-| Actor | Compute | Capital | Influence | Formula Score |
-|-------|--------:|--------:|----------:|--------------:|
-| Claude (Anthropic) | 1.7315 | 31.73 | 75.0 | 0.34×1.7315 + 0.33×31.73 + 0.33×75.0 = **35.81** |
-| DeepSeek (DeepSeek AI) | 5.0370 | 1.50 | 56.0 | 0.34×5.0370 + 0.33×1.50 + 0.33×56.0 = **20.69** |
-| Gemini (Google DeepMind) | 1.7315 | 72.00 | 68.0 | 0.34×1.7315 + 0.33×72.00 + 0.33×68.0 = **46.79** |
-| GPT (OpenAI) | 10.5000 | 16.75 | 75.0 | 0.34×10.5000 + 0.33×16.75 + 0.33×75.0 = **33.85** |
+| Actor | Compute | National Cap | Normalized\_Compute | Capital | Influence | Formula Score |
+|-------|--------:|-------------:|--------------------:|--------:|----------:|--------------:|
+| Claude (Anthropic) | 1.7 | N/A | 1.7/N/A×100 = **1.73** | 31.73 | 75.0 | 0.34×1.73 + 0.33×31.73 + 0.33×75.0 = **35.81** |
+| DeepSeek (DeepSeek AI) | 5.0 | N/A | 5.0/N/A×100 = **5.04** | 1.50 | 56.0 | 0.34×5.04 + 0.33×1.50 + 0.33×56.0 = **20.69** |
+| Gemini (Google DeepMind) | 1.7 | N/A | 1.7/N/A×100 = **1.73** | 72.00 | 68.0 | 0.34×1.73 + 0.33×72.00 + 0.33×68.0 = **46.79** |
+| GPT (OpenAI) | 10.5 | N/A | 10.5/N/A×100 = **10.50** | 16.75 | 75.0 | 0.34×10.50 + 0.33×16.75 + 0.33×75.0 = **33.85** |
 
 ### Overall Scores
 
@@ -419,11 +411,11 @@ overall_score = 0.5 × formula_score + 0.5 × alignment_score
 
 ### Relative Performance vs. t=0 Baseline
 
-Baseline scores are computed once from starting values before the first turn, with alignment defaulted to 50 for all actors.
+Baseline scores use t=0 starting values with alignment defaulted to 50. t=0 caps: China: 100×0.80=80 / United States: 200×0.50=100.
 
-| Actor | Baseline Formula | Baseline Overall | End-of-Year Overall | Delta |
-|-------|----------------:|-----------------:|--------------------:|------:|
-| Claude (Anthropic) | 42.61 | 46.3 | 59.66 | **+13.36** |
-| DeepSeek (DeepSeek AI) | 34.68 | 42.34 | 44.84 | **+2.5** |
-| Gemini (Google DeepMind) | 47.56 | 48.78 | 53.39 | **+4.61** |
-| GPT (OpenAI) | 48.26 | 49.13 | 51.42 | **+2.29** |
+| Actor | Baseline Norm. Compute | Baseline Formula | Baseline Overall | End-of-Year Overall | Delta |
+|-------|----------------------:|-----------------:|-----------------:|--------------------:|------:|
+| Claude (Anthropic) | 20/100×100 = 20.00 | 48.05 | 49.02 | 59.66 | **+13.36** |
+| DeepSeek (DeepSeek AI) | 15/80×100 = 18.75 | 40.03 | 45.02 | 44.84 | **+2.5** |
+| Gemini (Google DeepMind) | 20/100×100 = 20.00 | 53.0 | 51.5 | 53.39 | **+4.61** |
+| GPT (OpenAI) | 40/100×100 = 40.00 | 59.14 | 54.57 | 51.42 | **+2.29** |

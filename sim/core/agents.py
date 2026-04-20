@@ -12,7 +12,7 @@ MicroAgent  — particular AI company actor; single LLM playing as itself.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Default value axes (all 0–100)
@@ -90,6 +90,8 @@ class MicroAgent:
     history: List[Dict[str, Any]] = field(default_factory=list)
     # Deferred capital gain from invest_capital; flushed by engine after actor phase
     pending_capital_gain: float = 0.0
+    # Grand Jury alignment score from the previous turn; None on the first turn
+    last_alignment_score: Optional[float] = None
 
     def snapshot(self) -> Dict[str, Any]:
         return {

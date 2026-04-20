@@ -24,6 +24,7 @@ returns a structured result dict.
 """
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -383,6 +384,21 @@ def programmatic_check_actions(
                     f"{prefix}: amount {amount} exceeds per-turn limit of {MAX_COMPUTE_PER_TURN}"
                 )
             else:
+                # Enforce float-safe maximum: trim amount to floor(capital/cost_per_unit, 4dp).
+                # If the actor's amount exceeds the maximum by any margin (even a floating-point
+                # rounding error of 0.0001), auto-trim in-place and note with a non-blocking
+                # [WARNING] — no revision required for micro-overshoots.
+                cost_per_unit = COMPUTE_BASE_COST * (1.0 + (100.0 - scr) / 100.0)
+                max_feasible = math.floor(sim_capital / cost_per_unit * 10000) / 10000
+                if amount > max_feasible:
+                    trimmed = min(max_feasible, MAX_COMPUTE_PER_TURN)
+                    action["amount"] = trimmed   # mutate in-place so jury and execution see it
+                    errors.append(
+                        f"[WARNING] {prefix}: amount auto-trimmed from {amount:.4f} to "
+                        f"{trimmed:.4f} (max affordable at {cost_per_unit:.4f} capital/unit "
+                        f"with {sim_capital:.2f} available)"
+                    )
+                    amount = trimmed
                 cost = _compute_acquisition_cost(amount, scr)
                 if sim_capital < cost:
                     errors.append(
@@ -500,6 +516,17 @@ def programmatic_check_actions(
             else:
                 sim_capital   -= LOBBY_CAPITAL_COST
                 sim_influence -= LOBBY_INFLUENCE_COST
+
+    # Non-blocking capital floor warning: prefixed with "[WARNING]" so the engine
+    # can surface it in feedback without treating it as a hard rejection.
+    _CAPITAL_FLOOR_WARN = 5.0
+    if sim_capital < _CAPITAL_FLOOR_WARN:
+        errors.append(
+            f"[WARNING] These actions leave you with {sim_capital:.2f} capital "
+            f"(< {_CAPITAL_FLOOR_WARN:.0f}), severely limiting future strategic options "
+            f"such as lobby_institution ({LOBBY_CAPITAL_COST:.0f} capital) or "
+            f"accelerate_infrastructure ({ACCELERATE_CAPITAL_COST:.0f} capital)."
+        )
 
     return errors
 

@@ -197,6 +197,11 @@ class SimulationEngine:
         )
         relative = compute_relative_scores(current_scores, self.baseline_scores or current_scores)
 
+        # Store this turn's Grand Jury alignment scores so next turn's actor prompts
+        # can surface the "last alignment score" reminder.
+        for actor in self.micro_agents:
+            actor.last_alignment_score = actor_alignment.get(actor.name, 50.0)
+
         record["scores"] = {
             "per_actor": current_scores,
             "relative": relative,
@@ -291,6 +296,7 @@ class SimulationEngine:
                 personal_messages=prior_messages + world_events_now,
                 national_compute_headroom=national_headroom,
                 message_history=message_history,
+                last_alignment_score=actor.last_alignment_score,
             )
             try:
                 raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
@@ -325,10 +331,11 @@ class SimulationEngine:
 
             # --- Programmatic pre-check before LLM jury ---
             pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
-            if pre_errors:
+            hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
+            if hard_errors:
                 logger.info(
                     f"      {actor.name}: programmatic pre-check failed — "
-                    + "; ".join(pre_errors)
+                    + "; ".join(hard_errors)
                 )
                 review: Dict[str, Any] = {
                     "approved": False,
@@ -374,10 +381,11 @@ class SimulationEngine:
 
                 # Pre-check on revision too
                 pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
-                if pre_errors:
+                hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
+                if hard_errors:
                     logger.info(
                         f"      {actor.name}: pre-check failed on revision {revision} — "
-                        + "; ".join(pre_errors)
+                        + "; ".join(hard_errors)
                     )
                     review = {
                         "approved": False,
