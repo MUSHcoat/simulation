@@ -528,6 +528,16 @@ def programmatic_check_actions(
             f"accelerate_infrastructure ({ACCELERATE_CAPITAL_COST:.0f} capital)."
         )
 
+    # Non-blocking influence floor warning: parallel to capital floor.
+    _INFLUENCE_FLOOR_WARN = 5.0
+    if sim_influence < _INFLUENCE_FLOOR_WARN:
+        errors.append(
+            f"[WARNING] These actions leave you with {sim_influence:.2f} influence "
+            f"(< {_INFLUENCE_FLOOR_WARN:.0f}), severely limiting future strategic options "
+            f"like publishing narratives ({NARRATIVE_INFLUENCE_COST} influence) or "
+            f"institutional lobbying ({LOBBY_INFLUENCE_COST} influence)."
+        )
+
     return errors
 
 

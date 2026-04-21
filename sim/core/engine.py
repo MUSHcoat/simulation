@@ -332,6 +332,7 @@ class SimulationEngine:
             # --- Programmatic pre-check before LLM jury ---
             pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
             hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
+            warnings    = [e for e in pre_errors if e.startswith("[WARNING]")]
             if hard_errors:
                 logger.info(
                     f"      {actor.name}: programmatic pre-check failed — "
@@ -355,6 +356,21 @@ class SimulationEngine:
                     world_context=world_ctx,
                 )
                 revision = 0
+                # Surface non-blocking warnings in jury feedback even on a clean pass,
+                # so they persist in actor history and inform next-turn planning.
+                if warnings:
+                    warn_block = (
+                        "[PROGRAMMATIC WARNINGS — action approved; no revision needed]\n"
+                        + "\n".join(f"• {w}" for w in warnings)
+                    )
+                    review["feedback"] = (
+                        warn_block + "\n\n" + review["feedback"]
+                        if review["feedback"] else warn_block
+                    )
+                    logger.info(
+                        f"      {actor.name}: non-blocking warnings stored in history — "
+                        + "; ".join(warnings)
+                    )
 
             while not review["approved"] and revision < MAX_JURY_REVISIONS:
                 revision += 1
@@ -382,6 +398,7 @@ class SimulationEngine:
                 # Pre-check on revision too
                 pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
                 hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
+                warnings    = [e for e in pre_errors if e.startswith("[WARNING]")]
                 if hard_errors:
                     logger.info(
                         f"      {actor.name}: pre-check failed on revision {revision} — "
@@ -402,6 +419,15 @@ class SimulationEngine:
                         proposed_actions=proposed_actions,
                         world_context=world_ctx,
                     )
+                    if warnings:
+                        warn_block = (
+                            "[PROGRAMMATIC WARNINGS — action approved; no revision needed]\n"
+                            + "\n".join(f"• {w}" for w in warnings)
+                        )
+                        review["feedback"] = (
+                            warn_block + "\n\n" + review["feedback"]
+                            if review["feedback"] else warn_block
+                        )
 
             forfeited = not review["approved"]
             if forfeited:

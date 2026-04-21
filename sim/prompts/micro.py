@@ -15,8 +15,8 @@ _ACCELERATE_CAPITAL_COST   = 10.0
 _ACCELERATE_INFLUENCE_COST = 5
 _NARRATIVE_INFLUENCE_COST  = 5
 _NATIONAL_COMPUTE_CAPS  = {"United States": 0.50, "China": 0.80}
-_FORMULA_WEIGHT         = 0.75
-_ALIGNMENT_WEIGHT       = 0.25
+_FORMULA_WEIGHT         = 0.60
+_ALIGNMENT_WEIGHT       = 0.40
 
 
 def build_micro_action_prompt(

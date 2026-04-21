@@ -77,11 +77,11 @@ Available scenarios: `baseline_2026`, `nationalization_shock`, `tariff_escalatio
 |-----------|-------|----------|
 | Claude actor | `claude-sonnet-4-6` | Anthropic |
 | DeepSeek actor | `claude-sonnet-4-6` | Anthropic |
-| GPT actor | `gpt-4o` | OpenAI |
-| Gemini actor | `gemini-2.5-flash` | Google |
+| GPT actor | `gpt-5.4` | OpenAI |
+| Gemini actor | `gemini-3.1-pro` | Google |
 | Jury slot 1 | `claude-sonnet-4-6` | Anthropic |
-| Jury slot 2 | `gpt-4o` | OpenAI |
-| Jury slot 3 | `gemini-2.5-flash` | Google |
+| Jury slot 2 | `gpt-5.4` | OpenAI |
+| Jury slot 3 | `gemini-3.1-pro` | Google |
 
 Actor models are set in `config/actors/*.json` and can be changed per-actor without touching the code.
 
@@ -127,7 +127,7 @@ Log lines are colored by simulation stage. The stage is set proactively before e
     JuryOfAlignment — juror 1/3 (claude-sonnet-4-6) reviewing Claude (Anthropic)
     ...
   Phase 4 — Grand Jury
-    Grand Jury — juror 2/3 (gpt-4o)
+    Grand Jury — juror 2/3 (gpt-5.4)
   Phase 5 — MacroJury
     MacroJury — United States — juror 1/3 (claude-sonnet-4-6)
   Phase 6 — Scoring  (Year 2026)

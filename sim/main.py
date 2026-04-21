@@ -34,9 +34,9 @@ python main.py --years 8 --scenario nationalization_shock --output data/logs/nat
 
 # 4. Single-model mode — run all actors and all three jury slots with one model.
 #    --micro-model overrides every particular actor's LLM (default: each actor
-#    uses the model in its config file, e.g. gpt-4o for GPT).
+#    uses the model in its config file, e.g. gpt-5.4 for GPT).
 #    --jury-model overrides all three jury slots (default: diverse panel of
-#    claude-sonnet-4-6, gpt-4o, gemini-2.5-flash).
+#    claude-sonnet-4-6, gpt-5.4, gemini-3.1-pro).
 #    Useful for controlled comparisons or when only one API key is available.
 python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
 
@@ -236,7 +236,7 @@ def main():
                              "(default: each actor uses the model in its config)")
     parser.add_argument("--jury-model",  default=None,
                         help="Override all 3 jury slots with a single model "
-                             "(default: diverse panel of claude-sonnet-4-6, gpt-4o, gemini-2.5-flash)")
+                             "(default: diverse panel of claude-sonnet-4-6, gpt-5.4, gemini-3.1-pro)")
     parser.add_argument("--output",      default="data/logs",
                         help="Output directory for logs")
     parser.add_argument("--verbose",     action="store_true",
@@ -283,8 +283,8 @@ def main():
         "influence": args.w_influence if args.w_influence is not None else sv_fw.get("influence", 0.33),
     }
     overall_weights = {
-        "formula":   args.w_formula    if args.w_formula    is not None else sv_ow.get("formula",    0.5),
-        "alignment": args.w_alignment  if args.w_alignment  is not None else sv_ow.get("alignment",  0.5),
+        "formula":   args.w_formula    if args.w_formula    is not None else sv_ow.get("formula",    0.6),
+        "alignment": args.w_alignment  if args.w_alignment  is not None else sv_ow.get("alignment",  0.4),
     }
 
     logger.info(
@@ -301,7 +301,7 @@ def main():
     if args.jury_model:
         jury_models = [args.jury_model] * 3
     else:
-        jury_models = ["claude-sonnet-4-6", "gpt-4o", "gemini-2.5-flash"]
+        jury_models = ["claude-sonnet-4-6", "gpt-5.4", "gemini-3.1-pro"]
 
     logger.info(
         f"  States: {[a.name for a in macro_agents]}\n"
