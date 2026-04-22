@@ -43,7 +43,7 @@ python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
 # 5. Compute-dominant scoring — weight Compute at 60%, Capital and Influence at
 #    20% each. Shifts the formula score to reward raw compute acquisition.
 #    --w-formula and --w-alignment control how much the formula score vs. the
-#    Grand Jury's alignment score contribute to each actor's overall score (default 50/50).
+#    Grand Jury's alignment score contribute to each actor's overall score (default 60/40).
 python main.py --w-compute 0.6 --w-capital 0.2 --w-influence 0.2
 
 # 6. Alignment-dominant scoring — alignment score weighted at 70%. Actors who

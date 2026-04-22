@@ -156,6 +156,7 @@ class SimulationEngine:
         log_stage(logger, f"  Phase 1–3 — Actor Proposals · Jury Review · Execution", DIM_WHITE)
         micro_results = self._run_actor_phase(universal_ctx)
         record["phases"]["actor_phase"] = micro_results
+        record["a2a_messages"] = [m for m in self.channel.full_log() if m["year"] == year]
 
         # --- Phase 4: Grand Jury (changes already committed in Phase 3) ---
         log_stage(logger, "  Phase 4 — Grand Jury", GREEN)

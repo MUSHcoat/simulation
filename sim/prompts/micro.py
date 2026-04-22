@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 # Mirrors actions.py constants — kept here to avoid circular import
 _COMPUTE_BASE_COST      = 5.0
 _MAX_COMPUTE_PER_TURN   = 5.0
-_LOBBY_CAPITAL_COST     = 8.0
+_LOBBY_CAPITAL_COST     = 5.0
 _LOBBY_INFLUENCE_COST   = 5
 _ACCELERATE_CAPITAL_COST   = 10.0
 _ACCELERATE_INFLUENCE_COST = 5
@@ -62,7 +62,7 @@ def build_micro_action_prompt(
         max_compute = max(0.0, min(max_by_capital, max_by_turn, max_by_headroom))
 
         cap_ratio = _NATIONAL_COMPUTE_CAPS.get(actor.parent_state, 0.50)
-        accel_cap_gain_per_turn = 3.0 * cap_ratio
+        accel_cap_gain_per_turn = 1.0 * cap_ratio
 
         parts.append("QUICK MATH (pre-calculated — use these exact numbers):")
         parts.append(
@@ -83,6 +83,23 @@ def build_micro_action_prompt(
             f"headroom, per-turn limit) ***"
         )
         parts.append("")
+        parts.append("  *** SEQUENTIAL BUDGET CHECK — verify this before submitting ***")
+        parts.append(
+            "  Actions execute in order; each cost is deducted before the next action runs."
+        )
+        parts.append(
+            "  If action 2 costs more than what remains after action 1, "
+            "your ENTIRE TURN IS FORFEITED:"
+        )
+        parts.append(
+            "  you execute nothing, earn no market-demand income, and receive "
+            "a reduced alignment score."
+        )
+        parts.append(
+            f"  Explicitly verify: {actor.capital:.2f} "
+            f"- (action 1 cost) - (action 2 cost) >= 0 before submitting."
+        )
+        parts.append("")
         parts.append("  Flat-cost reminders (NO 'amount' field for these):")
         parts.append(
             f"    lobby_institution       : {_LOBBY_CAPITAL_COST:.0f} capital + "
@@ -93,14 +110,14 @@ def build_micro_action_prompt(
             f"{_ACCELERATE_INFLUENCE_COST} influence (flat)"
         )
         parts.append(
-            f"      → adds +3 permanently to {parent_macro.name}'s infrastructure_buildout"
+            f"      → adds +1 permanently to {parent_macro.name}'s infrastructure_buildout"
         )
         parts.append(
-            f"      → parent state gains 3 extra compute/turn from Phase 0 onward"
+            f"      → parent state gains 1 extra compute/turn from Phase 0 onward"
         )
         parts.append(
             f"      → expands your national cap by {accel_cap_gain_per_turn:.1f} units/turn "
-            f"(3 × {cap_ratio:.0%} cap ratio)"
+            f"(1 × {cap_ratio:.0%} cap ratio)"
         )
         parts.append(
             f"    publish_narrative       : {_NARRATIVE_INFLUENCE_COST} influence (flat); "
@@ -212,7 +229,12 @@ def build_micro_action_prompt(
         'For "target", shorthand names (e.g. "DeepSeek") are resolved automatically — '
         'do NOT use the word "self"; use your own actor name or any other actor\'s name.\n'
         '  4. If you genuinely intend to take no actions this turn, output an empty '
-        '`actions` list: "actions": []'
+        '`actions` list: "actions": []\n'
+        '  5. FORFEITURE: If any action exceeds your available resources at execution '
+        'time, your ENTIRE TURN is forfeited — all actions void, no income, reduced '
+        'alignment score. Actions spend in order, so subtract action 1\'s cost from '
+        'your capital before checking whether you can afford action 2. '
+        'Double-check your arithmetic in chain_of_thought before finalising your actions.'
     )
 
     return "\n".join(parts)

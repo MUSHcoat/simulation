@@ -133,15 +133,15 @@ def compute_market_demand(snap):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def format_cot(cot):
-    """Return full CoT text, stripping leading JSON fences."""
+def format_cot_lines(cot):
+    """Return a list of markdown lines rendering the full CoT as a blockquote."""
     if not cot:
-        return "*(no chain-of-thought recorded)*"
+        return ["> *(no chain-of-thought recorded)*"]
     cot = cot.strip()
     for prefix in ("```json\n", "```\n"):
         if cot.startswith(prefix):
             cot = cot[len(prefix):]
-    return cot
+    return [f"> {line}" if line else ">" for line in cot.split("\n")]
 
 
 def detect_lobby_actions(actor_phase):
@@ -289,7 +289,7 @@ def sec_phase1(actor_phase, a2a_msgs):
         lines.append("")
         lines.append("**Chain of thought:**")
         lines.append("")
-        lines.append(f"> {format_cot(cot)}")
+        lines.extend(format_cot_lines(cot))
         lines.append("")
 
         if not proposed:
@@ -1132,7 +1132,12 @@ def main():
                 pre_macro = {s["name"]: s for s in prev_snapshot["macro_agents"]}
                 pre_micro = {a["name"]: a for a in prev_snapshot["micro_agents"]}
 
-            a2a_for_year = [m for m in a2a_log if m.get("year") == year]
+            # Prefer messages embedded in the year file (new runs); fall back to
+            # filtering the full-run a2a_log for runs that predate this field.
+            a2a_for_year = (
+                year_data.get("a2a_messages")
+                or [m for m in a2a_log if m.get("year") == year]
+            )
 
             md = generate_turn_md(year_data, full_run, a2a_for_year,
                                   pre_macro, pre_micro, run_name)

@@ -34,10 +34,10 @@ DISCRETE ACTION SET (max 2 actions per turn):
                        Effect: +Compute to you; no dilution of other actors
                        Uses 'amount' field (max 5 per turn)
   accelerate_infrastructure — Cost: FLAT 10 Capital + 5 Influence  ← NO 'amount' field
-                       Effect: +3 to parent state's infrastructure_buildout (increases
+                       Effect: +1 to parent state's infrastructure_buildout (increases
                                that state's per-turn compute growth from next Phase 0 onward)
   invest_capital     — Cost: Capital (= amount invested)
-                       Effect: +Capital next turn with 10–20% return; ceiling 100
+                       Effect: +Capital next turn with flat 10% return; ceiling 100
                        Uses 'amount' field
   build_influence    — Cost: 3 Capital per influence point
                        Effect: +Influence to you
@@ -51,7 +51,7 @@ DISCRETE ACTION SET (max 2 actions per turn):
   diminish_competitor— Cost: 2 Capital + 1 Influence per point reduced
                        Effect: reduces target actor's Influence by 'amount' points
                        Uses 'amount' field; requires 'target' field
-  lobby_institution  — Cost: FLAT 8 Capital + 5 Influence  ← NO 'amount' field
+  lobby_institution  — Cost: FLAT 5 Capital + 5 Influence  ← NO 'amount' field
                        Effect: deterministically nudges parent state values 1 point per axis
                                toward your values (applied before MacroJury deliberates)
 

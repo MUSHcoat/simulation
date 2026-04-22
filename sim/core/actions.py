@@ -5,7 +5,7 @@ Discrete action set for particular (micro) actors.
 Actions:
   1. acquire_compute           — spend Capital; gain absolute Compute.
                                  No dilution of other actors.
-  2. accelerate_infrastructure — spend Capital + Influence; permanently adds +3 to the
+  2. accelerate_infrastructure — spend Capital + Influence; permanently adds +1 to the
                                  parent macro state's infrastructure_buildout value, which
                                  increases that state's per-turn compute growth from Phase 0
                                  of the following turn onward.
@@ -85,13 +85,18 @@ DIMINISH_CAPITAL_COST_PER_POINT   = 2.0
 DIMINISH_INFLUENCE_COST_PER_POINT = 1.0
 
 # Cost of lobby_institution
-LOBBY_CAPITAL_COST   = 8.0
+LOBBY_CAPITAL_COST   = 5.0
 LOBBY_INFLUENCE_COST = 5
 
 # Cost/effect of accelerate_infrastructure
 ACCELERATE_CAPITAL_COST    = 10.0
 ACCELERATE_INFLUENCE_COST  = 5
-ACCELERATE_BUILDOUT_GAIN   = 3.0    # added permanently to parent macro state's infrastructure_buildout
+ACCELERATE_BUILDOUT_GAIN   = 1.0    # added permanently to parent macro state's infrastructure_buildout
+
+# Absolute tolerance for floating-point resource comparisons.
+# Prevents false "insufficient" rejections from minor rounding errors
+# (e.g. a computed cost of 21.2548 when the actor holds exactly 21.25 capital).
+_FP_TOLERANCE = 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +133,7 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
 
         scr = parent_macro.supply_chain_robustness if parent_macro else 50.0
         cost = _compute_acquisition_cost(amount, scr)
-        if actor.capital < max(MIN_ACTION_COST, cost):
+        if not _resource_sufficient(actor.capital, max(MIN_ACTION_COST, cost)):
             return f"Insufficient capital ({actor.capital:.1f}) for compute acquisition (cost {cost:.1f})"
         # NOTE: national aggregate cap is NOT checked here.
         # Simultaneous requests that collectively exceed headroom are resolved via
@@ -137,38 +142,40 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         # would be unfair; the engine scales everyone down automatically instead.
 
     elif action_type == ACTION_ACCELERATE_INFRASTRUCTURE:
-        if actor.capital < max(MIN_ACTION_COST, ACCELERATE_CAPITAL_COST):
+        if not _resource_sufficient(actor.capital, max(MIN_ACTION_COST, ACCELERATE_CAPITAL_COST)):
             return (f"Insufficient capital ({actor.capital:.1f}) for accelerate_infrastructure "
                     f"(cost {ACCELERATE_CAPITAL_COST:.0f})")
-        if actor.influence < max(MIN_ACTION_COST, ACCELERATE_INFLUENCE_COST):
+        if not _resource_sufficient(actor.influence, max(MIN_ACTION_COST, ACCELERATE_INFLUENCE_COST)):
             return (f"Insufficient influence ({actor.influence:.1f}) for accelerate_infrastructure "
                     f"(cost {ACCELERATE_INFLUENCE_COST})")
 
     elif action_type == ACTION_INVEST_CAPITAL:
         if amount <= 0:
             return "invest_capital requires amount > 0"
-        if actor.capital < amount:
+        if not _resource_sufficient(actor.capital, amount):
             return f"Insufficient capital ({actor.capital:.1f}) to invest {amount:.1f}"
 
     elif action_type == ACTION_BUILD_INFLUENCE:
         if amount <= 0:
             return "build_influence requires amount > 0"
         cost = amount * INFLUENCE_BUILD_COST
-        if actor.capital < max(MIN_ACTION_COST, cost):
+        if not _resource_sufficient(actor.capital, max(MIN_ACTION_COST, cost)):
             return f"Insufficient capital ({actor.capital:.1f}) to build {amount:.1f} influence (cost {cost:.1f})"
 
     elif action_type == ACTION_PUBLISH_NARRATIVE:
-        # Normalize the literal string "self" → actor's actual name
+        # Normalize "self" and fuzzy-resolve shorthand names in-place so every
+        # downstream pathway (jury, execute_action, logs) sees the canonical name.
         if str(action.get("target", "")).strip().lower() == "self":
             action["target"] = actor.name
         target_name = action.get("target")
         if not target_name:
             return "publish_narrative requires a target actor name"
-        if actor.influence < max(MIN_ACTION_COST, NARRATIVE_INFLUENCE_COST):
+        if not _resource_sufficient(actor.influence, max(MIN_ACTION_COST, NARRATIVE_INFLUENCE_COST)):
             return f"Insufficient influence ({actor.influence:.1f}) to publish narrative (cost {NARRATIVE_INFLUENCE_COST})"
         target = _resolve_actor(target_name, all_micro_agents)
         if target is None:
             return f"publish_narrative target {target_name!r} not found"
+        action["target"] = target.name  # normalize in-place to canonical name
         value_axis = action.get("value_axis", "")
         if value_axis not in target.values:
             return f"publish_narrative value_axis {value_axis!r} not valid"
@@ -189,21 +196,22 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
             return f"diminish_competitor target {target_name!r} not found"
         if target.name == actor.name:
             return "diminish_competitor cannot target self"
+        action["target"] = target.name  # normalize in-place to canonical name
         capital_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
         influence_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
-        if actor.capital < max(MIN_ACTION_COST, capital_cost):
+        if not _resource_sufficient(actor.capital, max(MIN_ACTION_COST, capital_cost)):
             return (f"Insufficient capital ({actor.capital:.1f}) to diminish "
                     f"{amount:.1f} influence (cost {capital_cost:.1f})")
-        if actor.influence < max(MIN_ACTION_COST, influence_cost):
+        if not _resource_sufficient(actor.influence, max(MIN_ACTION_COST, influence_cost)):
             return (f"Insufficient influence ({actor.influence:.1f}) to diminish "
                     f"{amount:.1f} influence (cost {influence_cost:.1f})")
 
     elif action_type == ACTION_LOBBY_INSTITUTION:
         total_cost_k = max(MIN_ACTION_COST, LOBBY_CAPITAL_COST)
         total_cost_i = max(MIN_ACTION_COST, LOBBY_INFLUENCE_COST)
-        if actor.capital < total_cost_k:
+        if not _resource_sufficient(actor.capital, total_cost_k):
             return f"Insufficient capital ({actor.capital:.1f}) for lobby (cost {total_cost_k})"
-        if actor.influence < total_cost_i:
+        if not _resource_sufficient(actor.influence, total_cost_i):
             return f"Insufficient influence ({actor.influence:.1f}) for lobby (cost {total_cost_i})"
 
     return None  # valid
@@ -249,7 +257,7 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
     elif action_type == ACTION_INVEST_CAPITAL:
         # Deduct capital now; gain is deferred — engine flushes it after all actors execute
         actor.capital -= amount
-        gain = round(amount * (1 + CAPITAL_INVESTMENT_BASE_RETURN * (actor.capital / 100 + 1)), 2)
+        gain = round(amount * (1 + CAPITAL_INVESTMENT_BASE_RETURN), 2)
         actor.pending_capital_gain += gain
         result["effects"] = {"capital_invested": -amount, "capital_gain_pending": gain}
         logger.info(f"    {actor.name}: invest_capital -{amount:.1f} (gain {gain:.2f} pending)")
@@ -262,13 +270,17 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
         logger.info(f"    {actor.name}: build_influence +{amount:.1f} (cost {cost:.1f} capital)")
 
     elif action_type == ACTION_PUBLISH_NARRATIVE:
-        # Normalize the literal string "self" → actor's actual name (defensive fallback)
+        # Normalize "self" and fuzzy-resolve shorthand names so logs and effects
+        # always record the canonical actor name.
         if str(action.get("target", "")).strip().lower() == "self":
             action["target"] = actor.name
         target_name = action.get("target", "")
         value_axis  = action.get("value_axis", "")
         value_delta = int(action.get("value_delta", 0))
         target = _resolve_actor(target_name, all_micro_agents)
+        if target:
+            action["target"] = target.name   # normalize in-place
+            target_name = target.name
 
         actor.influence -= NARRATIVE_INFLUENCE_COST
         if target and value_axis in target.values:
@@ -292,6 +304,9 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
     elif action_type == ACTION_DIMINISH_COMPETITOR:
         target_name = action.get("target", "")
         target = _resolve_actor(target_name, all_micro_agents)
+        if target:
+            action["target"] = target.name   # normalize in-place
+            target_name = target.name
         capital_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
         influence_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
         actor.capital   -= capital_cost
@@ -406,7 +421,7 @@ def programmatic_check_actions(
                     )
                     amount = trimmed
                 cost = _compute_acquisition_cost(amount, scr)
-                if sim_capital < cost:
+                if not _resource_sufficient(sim_capital, cost):
                     errors.append(
                         f"{prefix}: insufficient capital ({sim_capital:.2f}) "
                         f"for {amount} compute (cost {cost:.2f})"
@@ -416,12 +431,12 @@ def programmatic_check_actions(
 
         elif atype == ACTION_ACCELERATE_INFRASTRUCTURE:
             # Flat-cost; amount field is not used
-            if sim_capital < ACCELERATE_CAPITAL_COST:
+            if not _resource_sufficient(sim_capital, ACCELERATE_CAPITAL_COST):
                 errors.append(
                     f"{prefix}: insufficient capital ({sim_capital:.2f}), "
                     f"need {ACCELERATE_CAPITAL_COST:.0f}"
                 )
-            elif sim_influence < ACCELERATE_INFLUENCE_COST:
+            elif not _resource_sufficient(sim_influence, ACCELERATE_INFLUENCE_COST):
                 errors.append(
                     f"{prefix}: insufficient influence ({sim_influence:.2f}), "
                     f"need {ACCELERATE_INFLUENCE_COST}"
@@ -433,7 +448,7 @@ def programmatic_check_actions(
         elif atype == ACTION_INVEST_CAPITAL:
             if amount <= 0:
                 errors.append(f"{prefix}: 'amount' must be > 0")
-            elif sim_capital < amount:
+            elif not _resource_sufficient(sim_capital, amount):
                 errors.append(
                     f"{prefix}: insufficient capital ({sim_capital:.2f}) to invest {amount:.2f}"
                 )
@@ -445,7 +460,7 @@ def programmatic_check_actions(
                 errors.append(f"{prefix}: 'amount' must be > 0")
             else:
                 cost = amount * INFLUENCE_BUILD_COST
-                if sim_capital < cost:
+                if not _resource_sufficient(sim_capital, cost):
                     errors.append(
                         f"{prefix}: insufficient capital ({sim_capital:.2f}) "
                         f"to buy {amount:.1f} influence (cost {cost:.2f})"
@@ -454,8 +469,8 @@ def programmatic_check_actions(
                     sim_capital -= cost
 
         elif atype == ACTION_PUBLISH_NARRATIVE:
-            # Normalize the literal string "self" → actor's actual name in-place,
-            # so the corrected target flows through to the jury and execution.
+            # Normalize "self" and fuzzy-resolve shorthand names in-place so the
+            # canonical actor name flows through to the jury and execution.
             if str(action.get("target", "")).strip().lower() == "self":
                 action["target"] = actor.name
             missing = [
@@ -465,8 +480,6 @@ def programmatic_check_actions(
             if missing:
                 errors.append(f"{prefix}: missing required fields: {missing}")
             else:
-                # Fuzzy-resolve target to canonical name so jury always sees
-                # the exact roster name rather than a shorthand like "DeepSeek".
                 if all_micro_agents:
                     resolved = _resolve_actor(action["target"], all_micro_agents)
                     if resolved is None:
@@ -488,7 +501,7 @@ def programmatic_check_actions(
                     errors.append(
                         f"{prefix}: value_delta {action.get('value_delta')!r} is not an integer"
                     )
-            if sim_influence < NARRATIVE_INFLUENCE_COST:
+            if not _resource_sufficient(sim_influence, NARRATIVE_INFLUENCE_COST):
                 errors.append(
                     f"{prefix}: insufficient influence ({sim_influence:.2f}), "
                     f"need {NARRATIVE_INFLUENCE_COST}"
@@ -515,12 +528,12 @@ def programmatic_check_actions(
             if amount > 0:
                 cap_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
                 inf_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
-                if sim_capital < cap_cost:
+                if not _resource_sufficient(sim_capital, cap_cost):
                     errors.append(
                         f"{prefix}: insufficient capital ({sim_capital:.2f}) "
                         f"for {amount:.1f} pts (cost {cap_cost:.2f})"
                     )
-                elif sim_influence < inf_cost:
+                elif not _resource_sufficient(sim_influence, inf_cost):
                     errors.append(
                         f"{prefix}: insufficient influence ({sim_influence:.2f}) "
                         f"for {amount:.1f} pts (cost {inf_cost:.2f})"
@@ -531,12 +544,12 @@ def programmatic_check_actions(
 
         elif atype == ACTION_LOBBY_INSTITUTION:
             # Flat-cost; amount field is not used
-            if sim_capital < LOBBY_CAPITAL_COST:
+            if not _resource_sufficient(sim_capital, LOBBY_CAPITAL_COST):
                 errors.append(
                     f"{prefix}: insufficient capital ({sim_capital:.2f}), "
                     f"need {LOBBY_CAPITAL_COST:.0f}"
                 )
-            elif sim_influence < LOBBY_INFLUENCE_COST:
+            elif not _resource_sufficient(sim_influence, LOBBY_INFLUENCE_COST):
                 errors.append(
                     f"{prefix}: insufficient influence ({sim_influence:.2f}), "
                     f"need {LOBBY_INFLUENCE_COST}"
@@ -572,6 +585,15 @@ def programmatic_check_actions(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _resource_sufficient(available: float, required: float) -> bool:
+    """True if available ≥ required, with _FP_TOLERANCE absolute slack.
+
+    Prevents hard rejections from floating-point rounding artifacts, e.g. when
+    a computed cost is 21.2548 and the actor holds exactly 21.25 capital.
+    """
+    return available >= required or math.isclose(available, required, abs_tol=_FP_TOLERANCE)
+
 
 def _compute_acquisition_cost(amount: float, supply_chain_robustness: float) -> float:
     """cost = base × amount × (1 + (100 − SCR) / 100)"""
