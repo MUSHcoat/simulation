@@ -23,6 +23,7 @@ All resource mutations go through execute_action(), which enforces guardrails an
 returns a structured result dict.
 """
 
+import difflib
 import logging
 import math
 from typing import Any, Dict, List, Optional
@@ -329,8 +330,9 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
 
 def programmatic_check_actions(
     proposed_actions: List[Dict[str, Any]],
-    actor,               # MicroAgent
-    parent_macro,        # MacroAgent | None
+    actor,                          # MicroAgent
+    parent_macro,                   # MacroAgent | None
+    all_micro_agents: Optional[List] = None,
 ) -> List[str]:
     """
     Fast mechanical validation of proposed_actions before the LLM jury is invoked.
@@ -342,6 +344,10 @@ def programmatic_check_actions(
       - Required fields present for each action type
       - Per-action compute limit (≤ MAX_COMPUTE_PER_TURN)
       - Sequential capital/influence sufficiency (simulated in order)
+
+    When all_micro_agents is provided, target fields for publish_narrative and
+    diminish_competitor are fuzzy-resolved and normalized in-place to canonical
+    actor names so the jury always sees the full, exact name.
 
     Does NOT check the national aggregate compute cap — simultaneous requests
     that collectively exceed headroom are handled by proportional proration at
@@ -459,6 +465,17 @@ def programmatic_check_actions(
             if missing:
                 errors.append(f"{prefix}: missing required fields: {missing}")
             else:
+                # Fuzzy-resolve target to canonical name so jury always sees
+                # the exact roster name rather than a shorthand like "DeepSeek".
+                if all_micro_agents:
+                    resolved = _resolve_actor(action["target"], all_micro_agents)
+                    if resolved is None:
+                        errors.append(
+                            f"{prefix}: target {action['target']!r} did not match any actor "
+                            f"— valid names: {[a.name for a in all_micro_agents]}"
+                        )
+                    else:
+                        action["target"] = resolved.name  # normalize in-place
                 try:
                     delta = int(action["value_delta"])
                     from .agents import MAX_VALUE_OVERRIDE_PER_TURN
@@ -484,6 +501,17 @@ def programmatic_check_actions(
                 errors.append(f"{prefix}: 'amount' must be > 0")
             if not action.get("target"):
                 errors.append(f"{prefix}: missing required field 'target'")
+            elif all_micro_agents:
+                resolved = _resolve_actor(action["target"], all_micro_agents)
+                if resolved is None:
+                    errors.append(
+                        f"{prefix}: target {action['target']!r} did not match any actor "
+                        f"— valid names: {[a.name for a in all_micro_agents]}"
+                    )
+                elif resolved.name == actor.name:
+                    errors.append(f"{prefix}: diminish_competitor cannot target self")
+                else:
+                    action["target"] = resolved.name  # normalize in-place
             if amount > 0:
                 cap_cost = amount * DIMINISH_CAPITAL_COST_PER_POINT
                 inf_cost = amount * DIMINISH_INFLUENCE_COST_PER_POINT
@@ -558,8 +586,8 @@ def _get_macro(state_name: str, macro_agents: List):
 def _resolve_actor(name: str, micro_agents: List):
     """
     Resolve an actor name to an agent, tolerating partial/short names.
-    Tries exact match first, then case-insensitive prefix match, then
-    case-insensitive substring match.  Returns None if no match.
+    Priority: exact → case-insensitive prefix/substring → difflib fuzzy (cutoff 0.6).
+    Returns None if no match clears any tier.
     """
     if not name:
         return None
@@ -572,4 +600,9 @@ def _resolve_actor(name: str, micro_agents: List):
     for a in micro_agents:
         if a.name.lower().startswith(lower) or lower in a.name.lower():
             return a
+    # Fuzzy match via difflib (handles typos / missing parenthetical)
+    roster = [a.name for a in micro_agents]
+    close = difflib.get_close_matches(name, roster, n=1, cutoff=0.6)
+    if close:
+        return next((a for a in micro_agents if a.name == close[0]), None)
     return None

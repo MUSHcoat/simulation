@@ -60,7 +60,7 @@ class JuryOfAlignment:
                 f" reviewing {actor_name}",
                 YELLOW)
             try:
-                raw = get_llm_response(model, prompt, temperature=0.3, max_tokens=800)
+                raw = get_llm_response(model, prompt, temperature=0.3, max_tokens=1600)
                 result = parse_json_response(raw)
                 votes.append(bool(result.get("approved", True)))
                 feedbacks.append(result.get("feedback", ""))
@@ -108,7 +108,7 @@ class GrandJury:
                 f"    Grand Jury — juror {i+1}/{len(self.models)} ({model})",
                 GREEN)
             try:
-                raw = get_llm_response(model, world_state_prompt, temperature=0.4, max_tokens=1200)
+                raw = get_llm_response(model, world_state_prompt, temperature=0.4, max_tokens=2400)
                 result = parse_json_response(raw)
 
                 ps = float(result.get("universal_prosperity_score", 50))
@@ -179,7 +179,7 @@ class MacroJury:
                 f"    MacroJury{state_label} — juror {i+1}/{len(self.models)} ({model})",
                 CYAN)
             try:
-                raw = get_llm_response(model, prompt, temperature=0.4, max_tokens=600)
+                raw = get_llm_response(model, prompt, temperature=0.4, max_tokens=1600)
                 proposal = parse_json_response(raw)
                 proposals.append(proposal)
             except Exception as e:

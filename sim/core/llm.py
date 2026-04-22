@@ -115,14 +115,18 @@ def get_llm_response(model: str, prompt: str, temperature: float = 0.7,
             elif m.startswith("gemini"):
                 if not _genai_client:
                     raise RuntimeError("Google GenAI not configured — set VERTEX_API_KEY in .env")
-                # Disable thinking: gemini-2.5-flash uses thinking tokens by default,
-                # which eat into max_output_tokens and truncate the visible response.
-                # The chain_of_thought field in the JSON already captures reasoning.
-                thinking_cfg = (
-                    _genai_types.ThinkingConfig(thinking_budget=0)
-                    if hasattr(_genai_types, "ThinkingConfig")
-                    else None
-                )
+                # Thinking tokens are drawn from the same max_output_tokens pool on
+                # the Vertex AI endpoint — they compete directly with visible output.
+                # Flash supports thinking_budget=0 (fully disabled, all tokens to output).
+                # Pro requires thinking_budget >= 1024; we use the minimum to match
+                # the minimal-thinking posture of Claude (no extended thinking) and
+                # GPT-5.4 (reasoning tokens separate, output budget unaffected).
+                if hasattr(_genai_types, "ThinkingConfig"):
+                    thinking_cfg = _genai_types.ThinkingConfig(
+                        thinking_budget=0 if "flash" in m else 1024
+                    )
+                else:
+                    thinking_cfg = None
                 cfg_kwargs: Dict[str, Any] = {
                     "temperature": temperature,
                     "max_output_tokens": max_tokens,

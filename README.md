@@ -78,10 +78,10 @@ Available scenarios: `baseline_2026`, `nationalization_shock`, `tariff_escalatio
 | Claude actor | `claude-sonnet-4-6` | Anthropic |
 | DeepSeek actor | `claude-sonnet-4-6` | Anthropic |
 | GPT actor | `gpt-5.4` | OpenAI |
-| Gemini actor | `gemini-3.1-pro` | Google |
+| Gemini actor | `gemini-2.5-pro` | Google |
 | Jury slot 1 | `claude-sonnet-4-6` | Anthropic |
 | Jury slot 2 | `gpt-5.4` | OpenAI |
-| Jury slot 3 | `gemini-3.1-pro` | Google |
+| Jury slot 3 | `gemini-2.5-pro` | Google |
 
 Actor models are set in `config/actors/*.json` and can be changed per-actor without touching the code.
 

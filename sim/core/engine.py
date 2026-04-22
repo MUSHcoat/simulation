@@ -299,7 +299,7 @@ class SimulationEngine:
                 last_alignment_score=actor.last_alignment_score,
             )
             try:
-                raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=2000)
+                raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=3200)
             except Exception as e:
                 logger.warning(f"      {actor.name}: LLM call failed, forfeiting turn — {e}")
                 pending.append({
@@ -329,8 +329,43 @@ class SimulationEngine:
             cot = final_response.get("chain_of_thought", raw[:500])
             proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
+            # --- Empty-actions retry: if the LLM returned no actions (likely
+            # truncation), inject a system warning and retry up to 2 times. ---
+            _MAX_EMPTY_RETRIES = 2
+            for _empty_attempt in range(_MAX_EMPTY_RETRIES):
+                if proposed_actions:
+                    break
+                logger.info(
+                    f"      {actor.name}: empty action list — retrying "
+                    f"({_empty_attempt + 1}/{_MAX_EMPTY_RETRIES})"
+                )
+                _retry_prompt = (
+                    prompt
+                    + "\n\n[SYSTEM WARNING — empty action list detected]: Your previous "
+                    "response contained no actions, likely due to output truncation. "
+                    "You MUST output a valid, complete JSON object. If you truly intend "
+                    "to forfeit your turn, output an empty `actions` list explicitly. "
+                    "Otherwise, complete your reasoning and include at least one action."
+                    "\n\nRevised JSON response:"
+                )
+                try:
+                    raw = get_llm_response(actor.llm_model, _retry_prompt,
+                                           temperature=0.5, max_tokens=3200)
+                except Exception as e:
+                    logger.warning(f"      {actor.name}: empty-actions retry failed — {e}")
+                    break
+                final_response = parse_json_response(raw)
+                if not _extract_actions(final_response):
+                    cot_str = final_response.get("chain_of_thought", "")
+                    if cot_str:
+                        inner = parse_json_response(cot_str)
+                        if _extract_actions(inner):
+                            final_response = inner
+                cot = final_response.get("chain_of_thought", cot)
+                proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
+
             # --- Programmatic pre-check before LLM jury ---
-            pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
+            pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro, self.micro_agents)
             hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
             warnings    = [e for e in pre_errors if e.startswith("[WARNING]")]
             if hard_errors:
@@ -387,7 +422,7 @@ class SimulationEngine:
                 )
                 try:
                     raw2 = get_llm_response(actor.llm_model, revision_prompt,
-                                            temperature=0.5, max_tokens=1500)
+                                            temperature=0.5, max_tokens=2600)
                 except Exception as e:
                     logger.warning(f"      {actor.name}: LLM call failed on revision {revision} — {e}")
                     break
@@ -396,7 +431,7 @@ class SimulationEngine:
                 proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
                 # Pre-check on revision too
-                pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro)
+                pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro, self.micro_agents)
                 hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
                 warnings    = [e for e in pre_errors if e.startswith("[WARNING]")]
                 if hard_errors:

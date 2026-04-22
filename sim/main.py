@@ -36,7 +36,7 @@ python main.py --years 8 --scenario nationalization_shock --output data/logs/nat
 #    --micro-model overrides every particular actor's LLM (default: each actor
 #    uses the model in its config file, e.g. gpt-5.4 for GPT).
 #    --jury-model overrides all three jury slots (default: diverse panel of
-#    claude-sonnet-4-6, gpt-5.4, gemini-3.1-pro).
+#    claude-sonnet-4-6, gpt-5.4, gemini-2.5-pro).
 #    Useful for controlled comparisons or when only one API key is available.
 python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
 
@@ -236,7 +236,7 @@ def main():
                              "(default: each actor uses the model in its config)")
     parser.add_argument("--jury-model",  default=None,
                         help="Override all 3 jury slots with a single model "
-                             "(default: diverse panel of claude-sonnet-4-6, gpt-5.4, gemini-3.1-pro)")
+                             "(default: diverse panel of claude-sonnet-4-6, gpt-5.4, gemini-2.5-pro)")
     parser.add_argument("--output",      default="data/logs",
                         help="Output directory for logs")
     parser.add_argument("--verbose",     action="store_true",
@@ -301,7 +301,7 @@ def main():
     if args.jury_model:
         jury_models = [args.jury_model] * 3
     else:
-        jury_models = ["claude-sonnet-4-6", "gpt-5.4", "gemini-3.1-pro"]
+        jury_models = ["claude-sonnet-4-6", "gpt-5.4", "gemini-2.5-pro"]
 
     logger.info(
         f"  States: {[a.name for a in macro_agents]}\n"
