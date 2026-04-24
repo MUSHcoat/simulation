@@ -39,6 +39,17 @@ from .scoring import (
     check_dominant_win,
     DEFAULT_FORMULA_WEIGHTS, DEFAULT_OVERALL_WEIGHTS,
 )
+from .validators import (
+    SimulationSanityError,
+    check_resource_invariants,
+    check_scr_bounds,
+    check_action_cost_deducted,
+    check_pending_capital_flush,
+    check_value_axis_bounds,
+    check_macro_jury_rate_limit,
+    check_publish_narrative_schema,
+    check_consecutive_forfeitures,
+)
 from prompts.universal import build_universal_context
 from prompts.micro import build_micro_action_prompt
 from prompts.macro import build_macro_jury_prompt
@@ -85,6 +96,8 @@ class SimulationEngine:
         self.run_log: List[Dict[str, Any]] = []
         self.baseline_scores: Optional[Dict[str, Dict[str, float]]] = None
         self.dominant_winner: Optional[str] = None
+        # Consecutive forfeitures per actor — halts at FORFEITURE_LIMIT (3)
+        self._consecutive_forfeitures: Dict[str, int] = {}
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -145,6 +158,13 @@ class SimulationEngine:
                 self._inject_event(event)
         record["events"] = [e.get("name", "") for e in active_events]
 
+        # --- Post-Phase 0 invariant checks ---
+        _snap0 = self._world_snapshot()
+        check_resource_invariants(year, self.macro_agents, self.micro_agents,
+                                  _snap0, self.output_dir, phase_label="post-Phase0")
+        check_scr_bounds(year, self.macro_agents, _snap0, self.output_dir,
+                         phase_label="post-Phase0")
+
         # --- Universal context (pre-execution world state visible to all) ---
         universal_ctx = build_universal_context(
             year=year,
@@ -173,6 +193,9 @@ class SimulationEngine:
 
         # --- Phase 5a: Apply mechanical lobby pressure before Macro Jury ---
         self._apply_lobby_pressure(micro_results)
+        _snap5a = self._world_snapshot()
+        check_value_axis_bounds(year, self.macro_agents, self.micro_agents,
+                                _snap5a, self.output_dir, phase_label="post-Phase5a")
 
         # --- Phase 5b: Rebuild context with post-execution + post-lobby world state ---
         post_exec_ctx = build_universal_context(
@@ -185,6 +208,9 @@ class SimulationEngine:
         log_stage(logger, "  Phase 5 — MacroJury", CYAN)
         macro_updates = self._run_macro_phase(post_exec_ctx, micro_results, gj_result)
         record["phases"]["macro_phase"] = macro_updates
+        _snap5c = self._world_snapshot()
+        check_value_axis_bounds(year, self.macro_agents, self.micro_agents,
+                                _snap5c, self.output_dir, phase_label="post-Phase5c")
 
         # --- Scoring (uses post-Phase-0 caps for Normalized_Compute) ---
         national_caps = self._compute_national_caps()
@@ -303,6 +329,14 @@ class SimulationEngine:
                 raw = get_llm_response(actor.llm_model, prompt, temperature=0.7, max_tokens=3200)
             except Exception as e:
                 logger.warning(f"      {actor.name}: LLM call failed, forfeiting turn — {e}")
+                self._consecutive_forfeitures[actor.name] = (
+                    self._consecutive_forfeitures.get(actor.name, 0) + 1
+                )
+                check_consecutive_forfeitures(
+                    self.current_year, actor.name,
+                    self._consecutive_forfeitures[actor.name],
+                    self._world_snapshot(), self.output_dir,
+                )
                 pending.append({
                     "actor": actor,
                     "final_response": {},
@@ -364,6 +398,12 @@ class SimulationEngine:
                             final_response = inner
                 cot = final_response.get("chain_of_thought", cot)
                 proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
+
+            # --- Phase 2 pre-check: JSON schema enforcement (hard halt on violation) ---
+            check_publish_narrative_schema(
+                self.current_year, proposed_actions, actor.name,
+                self._world_snapshot(), self.output_dir,
+            )
 
             # --- Programmatic pre-check before LLM jury ---
             pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro, self.micro_agents)
@@ -431,7 +471,11 @@ class SimulationEngine:
                 cot = final_response.get("chain_of_thought", cot)
                 proposed_actions = _extract_actions(final_response)[:MAX_ACTIONS_PER_TURN]
 
-                # Pre-check on revision too
+                # Schema + pre-check on revision too
+                check_publish_narrative_schema(
+                    self.current_year, proposed_actions, actor.name,
+                    self._world_snapshot(), self.output_dir,
+                )
                 pre_errors = programmatic_check_actions(proposed_actions, actor, parent_macro, self.micro_agents)
                 hard_errors = [e for e in pre_errors if not e.startswith("[WARNING]")]
                 warnings    = [e for e in pre_errors if e.startswith("[WARNING]")]
@@ -469,6 +513,19 @@ class SimulationEngine:
             if forfeited:
                 logger.info(f"      Turn forfeited after {MAX_JURY_REVISIONS} rejections")
 
+            # Consecutive forfeiture tracking — halts at FORFEITURE_LIMIT (3 in a row)
+            if forfeited:
+                self._consecutive_forfeitures[actor.name] = (
+                    self._consecutive_forfeitures.get(actor.name, 0) + 1
+                )
+            else:
+                self._consecutive_forfeitures[actor.name] = 0
+            check_consecutive_forfeitures(
+                self.current_year, actor.name,
+                self._consecutive_forfeitures[actor.name],
+                self._world_snapshot(), self.output_dir,
+            )
+
             pending.append({
                 "actor": actor,
                 "final_response": final_response,
@@ -494,8 +551,15 @@ class SimulationEngine:
                         errors.append({"action": action, "error": err})
                         logger.info(f"      Action blocked at execution: {err}")
                     else:
+                        _cap_pre = actor.capital
+                        _inf_pre = actor.influence
                         effect = execute_action(action, actor, self.macro_agents, self.micro_agents)
                         executed.append(effect)
+                        check_action_cost_deducted(
+                            self.current_year, actor, action,
+                            _cap_pre, _inf_pre,
+                            self._world_snapshot(), self.output_dir,
+                        )
 
                 for msg in p["final_response"].get("a2a_messages", []):
                     recipient = msg.get("recipient", "")
@@ -540,6 +604,15 @@ class SimulationEngine:
                     f"    {actor.name}: invest_capital gain flushed +{gain:.2f} → {actor.capital:.1f}"
                 )
                 actor.pending_capital_gain = 0.0
+
+        # Post-Phase 4a: verify all pending trackers are zeroed and bounds hold
+        _snap_post3 = self._world_snapshot()
+        check_pending_capital_flush(self.current_year, self.micro_agents,
+                                    _snap_post3, self.output_dir)
+        check_resource_invariants(self.current_year, self.macro_agents, self.micro_agents,
+                                  _snap_post3, self.output_dir, phase_label="post-Phase3")
+        check_scr_bounds(self.current_year, self.macro_agents, _snap_post3,
+                         self.output_dir, phase_label="post-Phase3")
 
         # ---- Phase 4b: Automated market demand capital gains ----
         # demand = influence × 0.5
@@ -616,6 +689,14 @@ class SimulationEngine:
 
             jury_update = jury.deliberate(prompt, state_name=state.name)
             old_snap = state.snapshot()
+            # Assert raw jury proposals respect the ±5/turn rate limit before applying
+            check_macro_jury_rate_limit(
+                self.current_year, state.name,
+                post_lobby_values=old_snap["values"],
+                proposed_values=jury_update.get("values", {}),
+                world_snapshot=self._world_snapshot(),
+                output_dir=self.output_dir,
+            )
             state.apply_jury_update(jury_update)
             new_snap = state.snapshot()
 

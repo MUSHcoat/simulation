@@ -12,6 +12,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .validators import check_a2a_token_limit
+
 logger = logging.getLogger(__name__)
 
 OUTGOING_TOKEN_BUDGET = 500  # tokens per actor per turn
@@ -78,6 +80,9 @@ class A2AChannel:
             tokens_consumed = tokens_needed
 
         self._budgets[year][sender] = used + tokens_consumed
+
+        # Hard circuit-breaker: final content must not exceed the absolute limit
+        check_a2a_token_limit(content, sender, year)
 
         msg = Message(
             sender=sender,

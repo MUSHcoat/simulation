@@ -265,7 +265,10 @@ def sec_phase0(scenario, events, macro_growth=None):
         lines.append(f"{len(events)} event(s) fired this turn:")
         lines.append("")
         for ev in events:
-            lines.append(f"- **{ev.get('name', 'Event')}:** {ev.get('description', str(ev))}")
+            if isinstance(ev, str):
+                lines.append(f"- **{ev}**")
+            else:
+                lines.append(f"- **{ev.get('name', 'Event')}:** {ev.get('description', str(ev))}")
     lines.append("")
     return lines
 
