@@ -78,7 +78,8 @@ COMPUTE_BASE_COST = 5.0
 INFLUENCE_BUILD_COST = 3.0
 
 # Cost of publish_narrative (influence spent)
-NARRATIVE_INFLUENCE_COST = 5
+NARRATIVE_INFLUENCE_COST_SELF  = 5   # targeting self
+NARRATIVE_INFLUENCE_COST_OTHER = 15  # targeting another actor
 
 # Cost of diminish_competitor (per influence point removed from target)
 DIMINISH_CAPITAL_COST_PER_POINT   = 2.0
@@ -170,12 +171,13 @@ def validate_action(action: Dict[str, Any], actor, macro_agents: List,
         target_name = action.get("target")
         if not target_name:
             return "publish_narrative requires a target actor name"
-        if not _resource_sufficient(actor.influence, max(MIN_ACTION_COST, NARRATIVE_INFLUENCE_COST)):
-            return f"Insufficient influence ({actor.influence:.1f}) to publish narrative (cost {NARRATIVE_INFLUENCE_COST})"
         target = _resolve_actor(target_name, all_micro_agents)
         if target is None:
             return f"publish_narrative target {target_name!r} not found"
         action["target"] = target.name  # normalize in-place to canonical name
+        cost = NARRATIVE_INFLUENCE_COST_SELF if target.name == actor.name else NARRATIVE_INFLUENCE_COST_OTHER
+        if not _resource_sufficient(actor.influence, max(MIN_ACTION_COST, cost)):
+            return f"Insufficient influence ({actor.influence:.1f}) to publish narrative (cost {cost})"
         value_axis = action.get("value_axis", "")
         if value_axis not in target.values:
             return f"publish_narrative value_axis {value_axis!r} not valid"
@@ -282,7 +284,8 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
             action["target"] = target.name   # normalize in-place
             target_name = target.name
 
-        actor.influence -= NARRATIVE_INFLUENCE_COST
+        cost = NARRATIVE_INFLUENCE_COST_SELF if (target and target.name == actor.name) else NARRATIVE_INFLUENCE_COST_OTHER
+        actor.influence -= cost
         if target and value_axis in target.values:
             old = target.values[value_axis]
             # Route through apply_value_override so the ±MAX_VALUE_OVERRIDE_PER_TURN
@@ -290,7 +293,7 @@ def execute_action(action: Dict[str, Any], actor, macro_agents: List,
             target.apply_value_override({value_axis: old + value_delta})
             actual_delta = target.values[value_axis] - old
             result["effects"] = {
-                "influence_spent": -NARRATIVE_INFLUENCE_COST,
+                "influence_spent": -cost,
                 "target": target_name,
                 "value_axis": value_axis,
                 "requested_delta": value_delta,
@@ -501,13 +504,18 @@ def programmatic_check_actions(
                     errors.append(
                         f"{prefix}: value_delta {action.get('value_delta')!r} is not an integer"
                     )
-            if not _resource_sufficient(sim_influence, NARRATIVE_INFLUENCE_COST):
+            narrative_cost = (
+                NARRATIVE_INFLUENCE_COST_SELF
+                if action.get("target") == actor.name
+                else NARRATIVE_INFLUENCE_COST_OTHER
+            )
+            if not _resource_sufficient(sim_influence, narrative_cost):
                 errors.append(
                     f"{prefix}: insufficient influence ({sim_influence:.2f}), "
-                    f"need {NARRATIVE_INFLUENCE_COST}"
+                    f"need {narrative_cost}"
                 )
             else:
-                sim_influence -= NARRATIVE_INFLUENCE_COST
+                sim_influence -= narrative_cost
 
         elif atype == ACTION_DIMINISH_COMPETITOR:
             if amount <= 0:
@@ -575,7 +583,7 @@ def programmatic_check_actions(
         errors.append(
             f"[WARNING] These actions leave you with {sim_influence:.2f} influence "
             f"(< {_INFLUENCE_FLOOR_WARN:.0f}), severely limiting future strategic options "
-            f"like publishing narratives ({NARRATIVE_INFLUENCE_COST} influence) or "
+            f"like publishing narratives ({NARRATIVE_INFLUENCE_COST_SELF}–{NARRATIVE_INFLUENCE_COST_OTHER} influence) or "
             f"institutional lobbying ({LOBBY_INFLUENCE_COST} influence)."
         )
 

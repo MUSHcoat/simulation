@@ -13,7 +13,8 @@ _LOBBY_CAPITAL_COST     = 5.0
 _LOBBY_INFLUENCE_COST   = 5
 _ACCELERATE_CAPITAL_COST   = 10.0
 _ACCELERATE_INFLUENCE_COST = 5
-_NARRATIVE_INFLUENCE_COST  = 5
+_NARRATIVE_INFLUENCE_COST_SELF  = 5
+_NARRATIVE_INFLUENCE_COST_OTHER = 15
 _NATIONAL_COMPUTE_CAPS  = {"United States": 0.50, "China": 0.80}
 _FORMULA_WEIGHT         = 0.60
 _ALIGNMENT_WEIGHT       = 0.40
@@ -137,7 +138,8 @@ def build_micro_action_prompt(
             f"(1 × {cap_ratio:.0%} cap ratio)"
         )
         parts.append(
-            f"    publish_narrative       : {_NARRATIVE_INFLUENCE_COST} influence (flat); "
+            f"    publish_narrative       : {_NARRATIVE_INFLUENCE_COST_SELF} Influence if targeting yourself; "
+            f"{_NARRATIVE_INFLUENCE_COST_OTHER} Influence if targeting another actor; "
             f"needs target/value_axis/value_delta fields"
         )
         parts.append("")

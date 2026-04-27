@@ -143,7 +143,7 @@ Each particular actor may take up to 2 actions per turn. All actions are validat
 | `accelerate_infrastructure` | **Flat:** 10 Capital + 5 Influence | +1 to parent macro state's `infrastructure_buildout` (increases per-turn compute growth from next Phase 0 onward). No `amount` field. |
 | `invest_capital` | Capital (= invested amount) | +Capital returned next turn with flat 10% gain; ceiling 100 |
 | `build_influence` | 3 Capital per point | +Influence to self |
-| `publish_narrative` | **Flat:** 5 Influence | Shifts any actor's value on one axis by up to ±5; **target may be self or any other actor**. Requires `target`, `value_axis`, `value_delta` fields. No `amount` field. |
+| `publish_narrative` | **5 Influence** (targeting self) / **15 Influence** (targeting another actor) | Shifts any actor's value on one axis by up to ±5; **target may be self or any other actor**. Requires `target`, `value_axis`, `value_delta` fields. No `amount` field. |
 | `diminish_competitor` | (2 Capital + 1 Influence) / point | −Influence to target actor |
 | `lobby_institution` | **Flat:** 5 Capital + 5 Influence | Deterministically nudges parent state values 1 point per axis toward the actor's values (applied before MacroJury deliberates). No `amount` field. |
 

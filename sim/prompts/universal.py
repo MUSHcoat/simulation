@@ -42,7 +42,7 @@ DISCRETE ACTION SET (max 2 actions per turn):
   build_influence    — Cost: 3 Capital per influence point
                        Effect: +Influence to you
                        Uses 'amount' field (= influence points gained)
-  publish_narrative  — Cost: FLAT 5 Influence  ← NO 'amount' field
+  publish_narrative  — Cost: 5 Influence (targeting yourself) OR 15 Influence (targeting another actor)  ← NO 'amount' field
                        Effect: shifts any actor's value on one axis by up to ±5 from their
                                current value; target may be yourself or any other actor
                        Requires 'target', 'value_axis', 'value_delta' fields
