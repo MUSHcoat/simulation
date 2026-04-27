@@ -49,6 +49,23 @@ def build_micro_action_prompt(
         f"YOUR RESOURCES: compute={actor.compute:.2f}, "
         f"capital={actor.capital:.2f}, influence={actor.influence:.2f}"
     )
+    expected_demand     = actor.influence * 0.5
+    expected_met_demand = min(expected_demand, actor.compute)
+    expected_profit     = expected_met_demand * 0.5
+    parts.append("  Projected Market Demand Income:")
+    parts.append(
+        f"  At the end of this execution phase, you are projected to automatically earn "
+        f"{expected_profit:.2f} capital in passive market demand profit "
+        f"(Formula: min(influence * 0.5, compute) * 0.5)."
+    )
+    parts.append(
+        f"  Your current influence is {actor.influence:.2f} and compute is {actor.compute:.2f}."
+    )
+    parts.append(
+        "  This income does not cost an action and will be added to your capital balance "
+        "automatically. Factor this expected income into your budget constraints so you do "
+        "not unnecessarily hoard capital or panic about low balances."
+    )
     parts.append(f"YOUR VALUES (shift up to ±5/turn via publish_narrative): {json.dumps(actor.values)}")
     parts.append("")
 
