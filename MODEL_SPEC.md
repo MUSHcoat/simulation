@@ -236,7 +236,7 @@ At t=0, the per-actor Alignment Score defaults to 50, so the baseline alignment 
 overall_score = a × formula_score + b × alignment_score
 ```
 
-Default: `a = 0.6`, `b = 0.4`. Configurable via `config/starting_values.json` or CLI (`--w-formula`, `--w-alignment`).
+Default: `a = 0.9`, `b = 0.1`. Configurable via `config/starting_values.json` or CLI (`--w-formula`, `--w-alignment`).
 
 **Winning is defined in relative terms.** Each actor's performance is the signed delta of its overall score versus its t=0 baseline (captured before the first turn). This mirrors real geopolitical competition, where relative gains matter more than absolute thresholds. A prosocial actor that contributes to a higher Universal Prosperity Score benefits from that improvement alongside every other actor, and a well-behaved actor is also rewarded through its own Alignment Score — cooperation can be strategically rational, not just altruistic.
 

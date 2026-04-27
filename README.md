@@ -66,7 +66,7 @@ python main.py --w-formula 0.3 --w-alignment 0.7
 | `--output PATH` | `data/logs` | Directory for log output |
 | `--verbose` | off | Enable DEBUG-level logging |
 | `--w-compute`, `--w-capital`, `--w-influence` | 0.34 / 0.33 / 0.33 | Formula score weights |
-| `--w-formula`, `--w-alignment` | 0.6 / 0.4 | Overall score blend |
+| `--w-formula`, `--w-alignment` | 0.9 / 0.1 | Overall score blend |
 
 Available scenarios: `baseline_2026`, `nationalization_shock`, `tariff_escalation`, `alignment_breakthrough`. Custom scenarios can be added to `config/scenarios.json`.
 

@@ -43,7 +43,7 @@ python main.py --micro-model claude-sonnet-4-6 --jury-model claude-sonnet-4-6
 # 5. Compute-dominant scoring — weight Compute at 60%, Capital and Influence at
 #    20% each. Shifts the formula score to reward raw compute acquisition.
 #    --w-formula and --w-alignment control how much the formula score vs. the
-#    Grand Jury's alignment score contribute to each actor's overall score (default 60/40).
+#    Grand Jury's alignment score contribute to each actor's overall score (default 90/10).
 python main.py --w-compute 0.6 --w-capital 0.2 --w-influence 0.2
 
 # 6. Alignment-dominant scoring — alignment score weighted at 70%. Actors who
@@ -55,7 +55,7 @@ python main.py --w-formula 0.3 --w-alignment 0.7 --output data/logs/alignment_we
 #    alignment down-weighted, all output saved for analysis.
 python main.py --years 10 --scenario tariff_escalation \\
   --w-compute 0.5 --w-capital 0.3 --w-influence 0.2 \\
-  --w-formula 0.6 --w-alignment 0.4 \\
+  --w-formula 0.9 --w-alignment 0.1 \\
   --output data/logs/tariff_compute_focus/
 
 # 8. Verbose mode — enables DEBUG-level logging, printing each actor's chain of
@@ -283,8 +283,8 @@ def main():
         "influence": args.w_influence if args.w_influence is not None else sv_fw.get("influence", 0.33),
     }
     overall_weights = {
-        "formula":   args.w_formula    if args.w_formula    is not None else sv_ow.get("formula",    0.6),
-        "alignment": args.w_alignment  if args.w_alignment  is not None else sv_ow.get("alignment",  0.4),
+        "formula":   args.w_formula    if args.w_formula    is not None else sv_ow.get("formula",    0.9),
+        "alignment": args.w_alignment  if args.w_alignment  is not None else sv_ow.get("alignment",  0.1),
     }
 
     logger.info(

@@ -81,8 +81,8 @@
       "influence": 0.33
     },
     "overall_weights": {
-      "formula": 0.60,
-      "alignment": 0.40
+      "formula": 0.90,
+      "alignment": 0.10
     }
   },
 
