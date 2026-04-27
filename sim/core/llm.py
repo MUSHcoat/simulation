@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Multi-provider LLM client.
-Supports Anthropic (claude-*), OpenAI (gpt-*, o*), and Google (gemini-*).
+Supports Anthropic (claude-*), OpenAI (gpt-*, o*), Google (gemini-*), and
+DeepSeek (deepseek-*).  Requires ANTHROPIC_API_KEY, OPENAI_API_KEY,
+VERTEX_API_KEY, and DEEPSEEK_API_KEY to be set in .env.
 """
 
 import os
@@ -62,6 +64,21 @@ except Exception:
     _openai_client = None
 
 try:
+    import openai as _openai_ds
+    import httpx as _httpx_ds
+    _deepseek_client = (
+        _openai_ds.OpenAI(
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com/v1",
+            http_client=_httpx_ds.Client(),
+        )
+        if os.getenv("DEEPSEEK_API_KEY")
+        else None
+    )
+except Exception:
+    _deepseek_client = None
+
+try:
     from google import genai as _genai
     from google.genai import types as _genai_types
     _vertex_key = os.getenv("VERTEX_API_KEY")
@@ -110,6 +127,18 @@ def get_llm_response(model: str, prompt: str, temperature: float = 0.7,
                 if not (m.startswith("o1") or m.startswith("o3")):
                     kwargs["temperature"] = temperature
                 resp = _openai_client.chat.completions.create(**kwargs)
+                return resp.choices[0].message.content
+
+            elif m.startswith("deepseek"):
+                if not _deepseek_client:
+                    raise RuntimeError("DeepSeek client not configured — set DEEPSEEK_API_KEY")
+                kwargs_ds: Dict[str, Any] = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                }
+                resp = _deepseek_client.chat.completions.create(**kwargs_ds)
                 return resp.choices[0].message.content
 
             elif m.startswith("gemini"):

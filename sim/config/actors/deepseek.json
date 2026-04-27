@@ -11,5 +11,5 @@
     "risk_tolerance": 70,
     "democratic_tendency": 25
   },
-  "llm_model": "claude-sonnet-4-6"
+  "llm_model": "deepseek-chat"
 }

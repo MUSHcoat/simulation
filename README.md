@@ -19,15 +19,16 @@ uv pip install -r requirements.txt
 
 ### API Keys
 
-Create `sim/.env` with keys for the providers you intend to use:
+Create `sim/.env` with keys for all four providers:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 VERTEX_API_KEY=...
+DEEPSEEK_API_KEY=sk-...
 ```
 
-All three keys are needed for a default run. If a key is absent, that provider's models will raise a `RuntimeError` when called. Use `--micro-model` and `--jury-model` to restrict the run to a single provider.
+All four keys are needed for a default run. If a key is absent, that provider's models will raise a `RuntimeError` when called. Use `--micro-model` and `--jury-model` to restrict the run to a single provider.
 
 **Google / Vertex AI auth**: Google calls use Vertex AI Express Mode via the unified `google-genai` SDK — authentication is handled by `VERTEX_API_KEY` alone, with no need for `gcloud auth` or a service account. Obtain the key from the Google Cloud console with the Vertex AI API enabled.
 
@@ -76,7 +77,7 @@ Available scenarios: `baseline_2026`, `nationalization_shock`, `tariff_escalatio
 | Component | Model | Provider |
 |-----------|-------|----------|
 | Claude actor | `claude-sonnet-4-6` | Anthropic |
-| DeepSeek actor | `claude-sonnet-4-6` | Anthropic |
+| DeepSeek actor | `deepseek-chat` | DeepSeek |
 | GPT actor | `gpt-5.4` | OpenAI |
 | Gemini actor | `gemini-2.5-pro` | Google |
 | Jury slot 1 | `claude-sonnet-4-6` | Anthropic |

@@ -11,7 +11,7 @@ as signed improvement from each actor's starting position.
 
 All starting values and guardrails are in config/starting_values.json. API keys for
 each provider must be set as environment variables: ANTHROPIC_API_KEY, OPENAI_API_KEY,
-GOOGLE_API_KEY (or GEMINI_API_KEY).
+VERTEX_API_KEY, and DEEPSEEK_API_KEY.
 
 ─────────────────────────────────────────────────────────────────
 USAGE EXAMPLES
