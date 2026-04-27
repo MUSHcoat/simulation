@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
 sim/.env
-sim/core/__pycache__/
+sim/core/__pycache__/*
+sim/prompts/__pycache__/*
