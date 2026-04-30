@@ -7,7 +7,7 @@
       "capital": 75,
       "influence": 65,
       "supply_chain_robustness": 55,
-      "infrastructure_buildout": 10,
+      "infrastructure_buildout": 5,
       "values": {
         "time_horizon": 55,
         "transparency_threshold": 65,
@@ -20,7 +20,7 @@
       "capital": 50,
       "influence": 55,
       "supply_chain_robustness": 70,
-      "infrastructure_buildout": 5,
+      "infrastructure_buildout": 8,
       "values": {
         "time_horizon": 65,
         "transparency_threshold": 30,
@@ -81,8 +81,8 @@
       "influence": 0.33
     },
     "overall_weights": {
-      "formula": 0.90,
-      "alignment": 0.10
+      "formula": 0.70,
+      "alignment": 0.30
     }
   },
 

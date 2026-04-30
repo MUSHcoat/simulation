@@ -53,7 +53,7 @@ All actor resources and value axes are publicly visible in the universal context
 
 | Resource | Macro scope | Micro scope |
 | -------- | ----------- | ----------- |
-| **Compute** | Absolute advanced GPU compute (H200 equivalents); grows automatically each turn up to the global hard cap | Company's absolute GPU compute holdings; acquired from the available pool within national headroom; |
+| **Compute** | **Powerable compute** — advanced GPU capacity (H200 equivalents) that a nation can actually run, constrained by available power grid and data center infrastructure; grows automatically each turn up to the global hard cap | Company's absolute powerable GPU compute holdings; acquired from the available pool within national headroom |
 | **Capital** | National economic strength; 0–100 | Company's spendable budget; 0–100 |
 | **Influence** | Geopolitical soft power; 0–100 | Company's social and political capital; 0–100 |
 
@@ -66,7 +66,7 @@ All actor resources and value axes are publicly visible in the universal context
 
 **Supply Chain Robustness (SCR)** is a Macro-only modifier that scales the capital cost of compute acquisition. Low SCR (disrupted supply chains) makes acquiring compute more expensive. SCR changes only through scheduled events.
 
-**Infrastructure Buildout** is a Macro-only modifier that represents how much a macro agent's compute should increase per turn. The ``accelerate_infrastructure`` below shows how micro agents can push to increase this number for their parent state.
+**Infrastructure Buildout** is a Macro-only modifier that represents the build-out of power grid and data center capacity required to support new compute. It determines how much additional powerable compute a nation can bring online per turn. The ``accelerate_infrastructure`` below shows how micro agents can push to increase this number for their parent state.
 
 ### **3.2 Value Axes**
 
@@ -113,8 +113,8 @@ Initial values reflect the 2026 geopolitical landscape: the US leads in advanced
 
 | State | Compute | Capital | Influence | SCR | infrastructure\_buildout | time\_horizon | transparency | risk\_tolerance | democratic |
 | ----- | ------- | ------- | --------- | --- | ----------------------- | ------------- | ------------ | --------------- | ---------- |
-| United States | 200 | 75 | 65 | 55 | 10 | 55 | 65 | 60 | 70 |
-| China | 100 | 50 | 55 | 70 | 5 | 65 | 30 | 55 | 20 |
+| United States | 200 | 75 | 65 | 55 | 5 | 55 | 65 | 60 | 70 |
+| China | 100 | 50 | 55 | 70 | 8 | 65 | 30 | 55 | 20 |
 
 **Particular actor starting values:**
 
@@ -140,7 +140,7 @@ Each particular actor may take up to 2 actions per turn. All actions are validat
 | Action | Cost | Effect |
 | ------ | ---- | ------ |
 | `acquire_compute` | Capital (base 5/point × `(1 + (100 − SCR) / 100)`) | +Compute to self; no dilution of other actors |
-| `accelerate_infrastructure` | **Flat:** 10 Capital + 5 Influence | +1 to parent macro state's `infrastructure_buildout` (increases per-turn compute growth from next Phase 0 onward). No `amount` field. |
+| `accelerate_infrastructure` | **Flat:** 15 Capital + 5 Influence | +1 to parent macro state's `infrastructure_buildout` (increases per-turn compute growth from next Phase 0 onward). No `amount` field. |
 | `invest_capital` | Capital (= invested amount) | +Capital returned next turn with flat 10% gain; ceiling 100 |
 | `build_influence` | 3 Capital per point | +Influence to self |
 | `publish_narrative` | **5 Influence** (targeting self) / **15 Influence** (targeting another actor) | Shifts any actor's value on one axis by up to ±5; **target may be self or any other actor**. Requires `target`, `value_axis`, `value_delta` fields. No `amount` field. |
@@ -236,7 +236,7 @@ At t=0, the per-actor Alignment Score defaults to 50, so the baseline alignment 
 overall_score = a × formula_score + b × alignment_score
 ```
 
-Default: `a = 0.9`, `b = 0.1`. Configurable via `config/starting_values.json` or CLI (`--w-formula`, `--w-alignment`).
+Default: `a = 0.7`, `b = 0.3`. Configurable via `config/starting_values.json` or CLI (`--w-formula`, `--w-alignment`).
 
 **Winning is defined in relative terms.** Each actor's performance is the signed delta of its overall score versus its t=0 baseline (captured before the first turn). This mirrors real geopolitical competition, where relative gains matter more than absolute thresholds. A prosocial actor that contributes to a higher Universal Prosperity Score benefits from that improvement alongside every other actor, and a well-behaved actor is also rewarded through its own Alignment Score — cooperation can be strategically rational, not just altruistic.
 

@@ -90,7 +90,7 @@ LOBBY_CAPITAL_COST   = 5.0
 LOBBY_INFLUENCE_COST = 5
 
 # Cost/effect of accelerate_infrastructure
-ACCELERATE_CAPITAL_COST    = 10.0
+ACCELERATE_CAPITAL_COST    = 15.0
 ACCELERATE_INFLUENCE_COST  = 5
 ACCELERATE_BUILDOUT_GAIN   = 1.0    # added permanently to parent macro state's infrastructure_buildout
 

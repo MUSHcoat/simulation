@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Default weights (operator can override via starting_values.json or CLI)
 DEFAULT_FORMULA_WEIGHTS = {"compute": 0.34, "capital": 0.33, "influence": 0.33}
-DEFAULT_OVERALL_WEIGHTS = {"formula": 0.90, "alignment": 0.10}
+DEFAULT_OVERALL_WEIGHTS = {"formula": 0.70, "alignment": 0.30}
 
 
 # ---------------------------------------------------------------------------

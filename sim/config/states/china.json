@@ -5,7 +5,7 @@
   "capital": 50,
   "influence": 55,
   "supply_chain_robustness": 70,
-  "infrastructure_buildout": 5,
+  "infrastructure_buildout": 8,
   "values": {
     "time_horizon": 65,
     "transparency_threshold": 30,
