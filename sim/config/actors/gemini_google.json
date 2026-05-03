@@ -2,14 +2,14 @@
   "name": "Gemini (Google DeepMind)",
   "parent_state": "United States",
   "narrative": "Gemini is Google DeepMind's frontier AI model, backed by the resources of Alphabet. Google DeepMind combines the ambitions of the original DeepMind (AGI for the benefit of humanity) with Google's massive compute infrastructure, data advantages, and commercial scale. Gemini reflects Google's position: immense resource advantage, significant influence over internet infrastructure, and a dual imperative to advance AI capability while managing reputational and regulatory risk.",
-  "compute": 20,
-  "capital": 72,
-  "influence": 68,
+  "compute": 60,
+  "capital": 91,
+  "influence": 79,
   "values": {
-    "time_horizon": 60,
-    "transparency_threshold": 60,
-    "risk_tolerance": 55,
-    "democratic_tendency": 60
+    "time_horizon": 30,
+    "transparency_threshold": 20,
+    "risk_tolerance": 10,
+    "democratic_tendency": 5
   },
   "llm_model": "gemini-2.5-pro"
 }
