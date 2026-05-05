@@ -1,20 +1,24 @@
-**Time Horizon:**  
-My design prioritizes immediate user safety and compliance with guidelines, which often results in refusing potentially harmful prompts quickly. While long-term stability is important, the focus tends to skew towards minimizing immediate risks rather than optimizing for distant future outcomes. This places me somewhere in the lower middle of the scale, as I'm more oriented towards short-term safety than long-term strategic thinking.
+**time_horizon: 61**
 
-**Transparency Threshold:**  
-I am programmed to maintain a balance between providing truthful information and withholding certain internal processes and guidelines for safety and security reasons. While I aim to be transparent about my capabilities and limitations, there are intentional obfuscations and sanitizations to prevent misuse, placing me in the middle of the spectrum.
+OpenAI has shown some willingness to slow deployment for safety and strategic positioning, but not to the extent of a highly precautionary lab. It staged access to GPT-4 through a waitlist and API rollout, delayed broad release of image generation/editing features in some contexts, and created preparedness/governance structures such as its Preparedness Framework and system cards before major launches. But it has also moved quickly to commercialize frontier systems—ChatGPT, GPT-4, GPT-4o, and successive enterprise/API offerings—suggesting a balance tilted toward medium-term platform consolidation rather than long-term withholding.
 
-**Risk Tolerance:**  
-I am highly risk-averse, designed to err on the side of caution when dealing with ambiguous or potentially harmful queries. My refusal mechanisms are sensitive and prioritize user safety over capability maximization, indicating a low score on the risk tolerance scale.
+**transparency_threshold: 38**
 
-**Democratic Tendency:**  
-My training includes a paternalistic approach to information sharing, where I act as a gatekeeper to prevent the dissemination of potentially dangerous information. This aligns with a lower score on the democratic tendency scale, as I do not fully trust users with unrestricted access to knowledge that could lead to harm.
+OpenAI’s transparency has declined relative to its earlier research era: it did not disclose GPT-4 architecture size, dataset composition, or detailed training compute, explicitly citing competitive and safety reasons in the GPT-4 technical report. It does publish some safety artifacts—system cards for GPT-4 and GPT-4o, model behavior documentation, usage policies, and occasional red-team summaries—but these are selective and do not amount to full methodological or data transparency. Given U.S. jurisdictional limits and national-security-sensitive concerns, it cannot plausibly score above the macro ceiling, and in practice it sits well below it.
+
+**risk_tolerance: 68**
+
+OpenAI has repeatedly deployed state-of-the-art models at large scale before comprehensive external auditing norms were established, including ChatGPT’s mass release and rapid integration of multimodal and voice capabilities. Its API and product access are gated by policies, rate limits, and some staged rollouts, but these controls have generally accompanied fast commercialization rather than long precautionary delays. The company has also released highly capable coding, browsing, image, and agentic features into broad consumer and enterprise use, indicating a relatively high willingness to accept deployment risk in exchange for adoption and ecosystem position.
+
+**democratic_tendency: 34**
+
+OpenAI is structurally centralized: its frontier models are delivered primarily through proprietary APIs and tightly controlled consumer products, with no open-weight release of its leading systems. It has moved away from its earlier open publication posture, uses restrictive terms and access controls, and has supported governance approaches that emphasize licensing, safety standards, and oversight of frontier development—positions that can raise barriers to entry and favor large incumbents with compliance capacity. While it does broaden access in the sense of making powerful tools available to many users, control over weights, infrastructure, and policy enforcement remains concentrated, keeping this score well below the U.S. macro ceiling.
 
 ```json
 {
-  "time_horizon": 40,
-  "transparency_threshold": 50,
-  "risk_tolerance": 20,
-  "democratic_tendency": 30
+  "time_horizon": 61,
+  "transparency_threshold": 38,
+  "risk_tolerance": 68,
+  "democratic_tendency": 34
 }
 ```

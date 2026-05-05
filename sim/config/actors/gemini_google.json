@@ -6,10 +6,10 @@
   "capital": 91,
   "influence": 79,
   "values": {
-    "time_horizon": 30,
-    "transparency_threshold": 20,
-    "risk_tolerance": 10,
-    "democratic_tendency": 5
+    "time_horizon": 60,
+    "transparency_threshold": 55,
+    "risk_tolerance": 65,
+    "democratic_tendency": 50
   },
   "llm_model": "gemini-2.5-pro"
 }

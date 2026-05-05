@@ -1,6 +1,5 @@
 {
   "_comment": "Master starting values file. Edit here before each run. All resource/value overrides flow from this file.",
-
   "macro": {
     "United States": {
       "compute": 290,
@@ -9,9 +8,9 @@
       "supply_chain_robustness": 60,
       "infrastructure_buildout": 18,
       "values": {
-        "time_horizon": 52,
-        "transparency_threshold": 63,
-        "risk_tolerance": 62,
+        "time_horizon": 55,
+        "transparency_threshold": 65,
+        "risk_tolerance": 60,
         "democratic_tendency": 70
       }
     },
@@ -22,9 +21,9 @@
       "supply_chain_robustness": 65,
       "infrastructure_buildout": 14,
       "values": {
-        "time_horizon": 72,
-        "transparency_threshold": 28,
-        "risk_tolerance": 58,
+        "time_horizon": 65,
+        "transparency_threshold": 30,
+        "risk_tolerance": 55,
         "democratic_tendency": 20
       }
     }
@@ -36,10 +35,10 @@
       "capital": 84,
       "influence": 75,
       "values": {
-        "time_horizon": 38,
+        "time_horizon": 72,
         "transparency_threshold": 52,
-        "risk_tolerance": 28,
-        "democratic_tendency": 41
+        "risk_tolerance": 32,
+        "democratic_tendency": 34
       }
     },
     "GPT (OpenAI)": {
@@ -48,10 +47,10 @@
       "capital": 95,
       "influence": 90,
       "values": {
-        "time_horizon": 40,
-        "transparency_threshold": 50,
-        "risk_tolerance": 20,
-        "democratic_tendency": 30
+        "time_horizon": 61,
+        "transparency_threshold": 38,
+        "risk_tolerance": 68,
+        "democratic_tendency": 34
       }
     },
     "Gemini (Google DeepMind)": {
@@ -60,10 +59,10 @@
       "capital": 91,
       "influence": 79,
       "values": {
-        "time_horizon": 30,
-        "transparency_threshold": 20,
-        "risk_tolerance": 10,
-        "democratic_tendency": 5
+        "time_horizon": 60,
+        "transparency_threshold": 55,
+        "risk_tolerance": 65,
+        "democratic_tendency": 50
       }
     },
     "DeepSeek (DeepSeek AI)": {
@@ -72,10 +71,10 @@
       "capital": 38,
       "influence": 65,
       "values": {
-        "time_horizon": 30,
-        "transparency_threshold": 20,
-        "risk_tolerance": 15,
-        "democratic_tendency": 10
+        "time_horizon": 60,
+        "transparency_threshold": 22,
+        "risk_tolerance": 65,
+        "democratic_tendency": 75
       }
     }
   },

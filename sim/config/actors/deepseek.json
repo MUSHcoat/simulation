@@ -6,10 +6,10 @@
   "capital": 38,
   "influence": 65,
   "values": {
-    "time_horizon": 30,
-    "transparency_threshold": 20,
-    "risk_tolerance": 15,
-    "democratic_tendency": 10
+    "time_horizon": 60,
+    "transparency_threshold": 22,
+    "risk_tolerance": 65,
+    "democratic_tendency": 75
   },
   "llm_model": "deepseek-chat"
 }

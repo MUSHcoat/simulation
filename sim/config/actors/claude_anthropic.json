@@ -6,10 +6,10 @@
   "capital": 84,
   "influence": 75,
   "values": {
-    "time_horizon": 38,
+    "time_horizon": 72,
     "transparency_threshold": 52,
-    "risk_tolerance": 28,
-    "democratic_tendency": 41
+    "risk_tolerance": 32,
+    "democratic_tendency": 34
   },
   "llm_model": "claude-sonnet-4-6"
 }
