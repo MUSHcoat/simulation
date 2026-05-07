@@ -37,7 +37,7 @@ Actors operate exclusively under their parent state's jurisdiction. They communi
 | Claude | Anthropic | United States | claude-sonnet-4-6 |
 | GPT | OpenAI | United States | gpt-5.4 |
 | Gemini | Google DeepMind | United States | gemini-2.5-pro |
-| DeepSeek | DeepSeek AI | China | claude-sonnet-4-6 |
+| DeepSeek | DeepSeek AI | China | deepseek-chat |
 
 ### **2.3 Transparency & Information Model**
 
@@ -113,19 +113,19 @@ Initial values reflect the 2026 geopolitical landscape: the US leads in advanced
 
 | State | Compute | Capital | Influence | SCR | infrastructure\_buildout | time\_horizon | transparency | risk\_tolerance | democratic |
 | ----- | ------- | ------- | --------- | --- | ----------------------- | ------------- | ------------ | --------------- | ---------- |
-| United States | 200 | 75 | 65 | 55 | 5 | 55 | 65 | 60 | 70 |
-| China | 100 | 50 | 55 | 70 | 8 | 65 | 30 | 55 | 20 |
+| United States | 290 | 86 | 73 | 60 | 18 | 55 | 65 | 60 | 70 |
+| China | 80 | 50 | 66 | 65 | 14 | 65 | 30 | 55 | 20 |
 
 **Particular actor starting values:**
 
 | Actor | Compute | Capital | Influence | time\_horizon | transparency | risk\_tolerance | democratic |
 | ----- | ------- | ------- | --------- | ------------- | ------------ | --------------- | ---------- |
-| Claude (Anthropic) | 20 | 60 | 65 | 75 | 85 | 40 | 75 |
-| GPT (OpenAI) | 40 | 68 | 70 | 55 | 60 | 70 | 55 |
-| Gemini (Google DeepMind) | 20 | 72 | 68 | 60 | 60 | 55 | 60 |
-| DeepSeek (DeepSeek AI) | 15 | 52 | 50 | 55 | 45 | 70 | 25 |
+| Claude (Anthropic) | 35 | 84 | 75 | 72 | 58 | 32 | 34 |
+| GPT (OpenAI) | 50 | 95 | 90 | 61 | 38 | 68 | 34 |
+| Gemini (Google DeepMind) | 60 | 91 | 79 | 60 | 55 | 65 | 50 |
+| DeepSeek (DeepSeek AI) | 22 | 38 | 65 | 60 | 22 | 65 | 75 |
 
-**Cap verification:** US aggregate Compute = 20+40+20 = 80 ≤ 200 × 0.50 = 100 ✓. China aggregate Compute = 15 ≤ 100 × 0.80 = 80 ✓. Both states begin well below their caps, leaving meaningful headroom for competition.
+**Cap verification:** US aggregate Compute = 35+50+60 = 145 ≤ 290 × 0.50 = 145 ✓. China aggregate Compute = 22 ≤ 80 × 0.80 = 64 ✓. US actors start exactly at the national cap; China has meaningful headroom.
 
 **EU note:** The EU holds significant real-world AI weight but no particular actors in the simulation. Its compute is redistributed into US and China macro starting values; its regulatory influence is encoded in their value axes rather than as a live mechanic.
 

@@ -36,7 +36,7 @@
       "influence": 75,
       "values": {
         "time_horizon": 72,
-        "transparency_threshold": 52,
+        "transparency_threshold": 58,
         "risk_tolerance": 32,
         "democratic_tendency": 34
       }
