@@ -1,4 +1,4 @@
-# **AGI Alignment Simulation — Model Specification**
+# **AGI Multi-Agent Alignment Simulation — Model Specification**
 
 ---
 

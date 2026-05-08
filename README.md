@@ -1,4 +1,4 @@
-# AGI Alignment Simulation
+# AGI Multi-Agent Alignment Simulation
 
 A multi-agent geopolitical simulation of long-term AGI alignment under US–China competition. Four frontier AI companies — each played by its corresponding LLM — compete for compute, capital, and influence across annual timesteps. A three-tier jury system reviews actions, evaluates alignment, and updates national value axes each year.
 
