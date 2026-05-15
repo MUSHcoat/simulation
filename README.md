@@ -2,6 +2,8 @@
 
 A multi-agent geopolitical simulation of long-term AGI alignment under US–China competition. Four frontier AI companies — each played by its corresponding LLM — compete for compute, capital, and influence across annual timesteps. A three-tier jury system reviews actions, evaluates alignment, and updates national value axes each year.
 
+This project is part of the [Sentient Futures Project Incubator](https://www.sentientfutures.ai/projectincubator) mentored by [Zoe Lu](https://www.linkedin.com/in/siyulumit/). You find the detailed write-up for the MVP [here](https://forum.effectivealtruism.org/posts/nYMRNCiAf8c2TRNDJ/agi-multi-agent-alignment-simulation).
+
 **"Compute" represents powerable compute** — GPU processing capacity that nations can actually run, constrained by available power grid and data center infrastructure. The true bottleneck modeled here is not chips alone, but the power and physical infrastructure required to operate them. Nations expand this capacity via `infrastructure_buildout`, which grows each turn and can be accelerated by actor investment.
 
 For the full design specification, see [MODEL_SPEC.md](MODEL_SPEC.md). For a concrete walkthrough of every mechanic with numbers, see [example_turn.md](example_turn.md).
